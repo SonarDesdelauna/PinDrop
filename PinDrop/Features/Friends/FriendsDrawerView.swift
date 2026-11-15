@@ -38,6 +38,7 @@ struct FriendsDrawerView: View {
                     }
                     inviteCard
                     settingsSection
+                    demoSection
                     signOutButton
                     footer
                 }
@@ -812,6 +813,91 @@ struct FriendsDrawerView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .glassCard()
+        }
+    }
+
+    // MARK: - Developer / Demo controls
+
+    /// Demo mode puts fake friends, a trail, a cross-path, a capsule and Marco 20 m away around
+    /// your real position, so every mechanic can be tried from home.
+    private var demoSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("demo.section.title")
+                .font(Theme.text(.headline, weight: .bold))
+                .foregroundStyle(Theme.textPrimary)
+                .padding(.horizontal, 4)
+
+            VStack(spacing: 0) {
+                Toggle(isOn: Binding(
+                    get: { appState.isDemoModeEnabled },
+                    set: { appState.setDemoMode($0) }
+                )) {
+                    settingsLabel(
+                        icon: "hammer.fill",
+                        tint: Theme.warning,
+                        title: Text("demo.toggle.title"),
+                        subtitle: Text("demo.toggle.subtitle")
+                    )
+                }
+                .tint(Theme.neonPurple)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+
+                if appState.isDemoModeEnabled {
+                    rowDivider
+
+                    Button {
+                        HapticManager.shared.tap()
+                        appState.simulateCapsuleApproach()
+                    } label: {
+                        settingsRow(
+                            icon: "shippingbox.fill",
+                            tint: Color(hex: 0xF59E0B),
+                            title: Text("demo.capsule.simulate"),
+                            subtitle: Text("demo.capsule.simulate.subtitle"),
+                            accessory: "play.fill"
+                        )
+                    }
+                    .buttonStyle(PressableButtonStyle(pressedScale: 0.98))
+
+                    rowDivider
+
+                    Button {
+                        HapticManager.shared.tap()
+                        appState.generateDemoCrossPath()
+                    } label: {
+                        settingsRow(
+                            icon: "point.3.connected.trianglepath.dotted",
+                            tint: Theme.emerald,
+                            title: Text("demo.crossPath.generate"),
+                            subtitle: Text("demo.crossPath.generate.subtitle"),
+                            accessory: "play.fill"
+                        )
+                    }
+                    .buttonStyle(PressableButtonStyle(pressedScale: 0.98))
+
+                    if appState.simulatedLocation != nil {
+                        rowDivider
+
+                        Button {
+                            HapticManager.shared.tap()
+                            appState.endLocationSimulation()
+                        } label: {
+                            settingsRow(
+                                icon: "location.fill",
+                                tint: Theme.neonPurple,
+                                title: Text("demo.location.reset"),
+                                subtitle: Text("demo.location.reset.subtitle"),
+                                accessory: "arrow.uturn.backward"
+                            )
+                        }
+                        .buttonStyle(PressableButtonStyle(pressedScale: 0.98))
+                    }
+                }
+            }
+            .glassCard()
+            .animation(Theme.spring, value: appState.isDemoModeEnabled)
+            .animation(Theme.spring, value: appState.simulatedLocation != nil)
         }
     }
 

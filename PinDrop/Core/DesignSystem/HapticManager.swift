@@ -70,6 +70,52 @@ final class HapticManager {
         lightImpact.impactOccurred(intensity: 0.7)
     }
 
+    /// Sync Shot countdown: each tick is stronger than the previous one (3 → 2 → 1).
+    func countdownTick(_ remaining: Int) {
+        switch remaining {
+        case 3:
+            lightImpact.impactOccurred(intensity: 0.55)
+            lightImpact.prepare()
+        case 2:
+            mediumImpact.impactOccurred(intensity: 0.8)
+            mediumImpact.prepare()
+        default:
+            heavyImpact.impactOccurred(intensity: 1)
+            heavyImpact.prepare()
+        }
+    }
+
+    /// Both phones shoot together.
+    func syncFire() {
+        rigidImpact.impactOccurred(intensity: 1)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(90))
+            self.notification.notificationOccurred(.success)
+        }
+    }
+
+    /// "Sfiorati": you crossed a friend's path.
+    func crossPath() {
+        softImpact.impactOccurred(intensity: 1)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(160))
+            self.softImpact.impactOccurred(intensity: 0.7)
+            try? await Task.sleep(for: .milliseconds(160))
+            self.lightImpact.impactOccurred(intensity: 0.5)
+        }
+    }
+
+    /// A Geo-Capsule opens: success, then a crescendo.
+    func capsuleOpened() {
+        notification.notificationOccurred(.success)
+        Task { @MainActor in
+            for intensity in [0.4, 0.6, 0.8, 1.0] {
+                try? await Task.sleep(for: .milliseconds(110))
+                self.heavyImpact.impactOccurred(intensity: intensity)
+            }
+        }
+    }
+
     func selection() {
         selectionFeedback.selectionChanged()
         selectionFeedback.prepare()

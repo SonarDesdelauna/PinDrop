@@ -8,6 +8,8 @@ struct ClusterAnnotationView: View {
     let placeName: String?
     let currentUserID: UUID
     let isAppUnlocked: Bool
+    /// Pins unlocked by a cross-path ("Sfiorati") even while the map is locked.
+    var unlockedPinIDs: Set<UUID> = []
     let distanceText: String?
     let namespace: Namespace.ID
     let inactiveHeroPinIDs: Set<UUID>
@@ -26,7 +28,7 @@ struct ClusterAnnotationView: View {
     }
 
     private func isLocked(_ pin: PhotoPin) -> Bool {
-        !isAppUnlocked && pin.author.id != currentUserID
+        !isAppUnlocked && pin.author.id != currentUserID && !unlockedPinIDs.contains(pin.id)
     }
 
     var body: some View {

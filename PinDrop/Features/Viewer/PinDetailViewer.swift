@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Full-screen Stories-style viewer for a single pin or every POV of a Shared Hub.
 struct PinDetailViewer: View {
@@ -119,6 +120,14 @@ struct PinDetailViewer: View {
                     Text(verbatim: pin.author.displayName)
                         .font(Theme.text(.headline, weight: .bold))
                 }
+                if let partner = appState.syncPartner(of: pin) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bolt.fill")
+                        Text("sync.viewer.with \(partner.author.firstName)")
+                    }
+                    .font(Theme.text(.caption, weight: .bold))
+                    .foregroundStyle(Theme.emeraldLight)
+                }
                 HStack(spacing: 4) {
                     if let place = appState.placeName(for: pin) {
                         Text(verbatim: place)
@@ -146,7 +155,42 @@ struct PinDetailViewer: View {
         }
     }
 
+    @ViewBuilder
     private func photoCard(for pin: PhotoPin, isLocked: Bool) -> some View {
+        if pin.isSyncShot, let partner = appState.syncPartner(of: pin) {
+            syncCard(for: pin, partner: partner)
+        } else {
+            singlePhotoCard(for: pin, isLocked: isLocked)
+        }
+    }
+
+    /// Both points of view of a Sync Shot, swappable and side by side or stacked.
+    private func syncCard(for pin: PhotoPin, partner: PhotoPin) -> some View {
+        SyncShotCardView(
+            first: uiImage(for: pin),
+            second: uiImage(for: partner) ?? pin.syncPartnerImageData.flatMap(UIImage.init(data:)),
+            firstName: pin.author.firstName,
+            secondName: partner.author.firstName,
+            firstLocked: appState.isLocked(pin),
+            secondLocked: appState.isLocked(partner)
+        )
+        .overlay(alignment: .topLeading) {
+            expiryChip(for: pin)
+                .padding(12)
+        }
+        .matchedGeometryEffect(id: HeroID.active(pin.id), in: namespace, isSource: true)
+        .task(id: "\(pin.id.uuidString)-\(partner.id.uuidString)-\(appState.isLocked(pin))") {
+            await appState.loadFullImage(for: pin)
+            await appState.loadFullImage(for: partner)
+        }
+    }
+
+    private func uiImage(for pin: PhotoPin) -> UIImage? {
+        guard let source = appState.fullImage(for: pin) else { return nil }
+        return ImageCache.image(forKey: source.key, data: source.data)
+    }
+
+    private func singlePhotoCard(for pin: PhotoPin, isLocked: Bool) -> some View {
         Color.clear
             .aspectRatio(3.0 / 4.0, contentMode: .fit)
             .overlay {

@@ -59,7 +59,7 @@ struct PhotoPin: Identifiable, Decodable, Sendable {
     static let reactionPalette: [String] = ["🔥", "😍", "😂", "👀", "🫶"]
 
     /// Columns requested from PostgREST, with the author profile and reactions embedded.
-    static let selectColumns = "id, latitude, longitude, place_name, caption, image_path, thumb_path, blur_path, created_at, expires_at, author:profiles!pins_author_id_fkey(*), reactions(user_id, emoji, created_at)"
+    static let selectColumns = "id, latitude, longitude, place_name, caption, image_path, thumb_path, blur_path, created_at, expires_at, sync_session_id, author:profiles!pins_author_id_fkey(*), reactions(user_id, emoji, created_at)"
 
     let id: UUID
     var author: UserProfile
@@ -74,6 +74,12 @@ struct PhotoPin: Identifiable, Decodable, Sendable {
     let createdAt: Date
     let expiresAt: Date
     var reactions: [Reaction]
+    /// Set when the pin is one half of a Sync Shot (both halves share the session).
+    let syncSessionID: UUID?
+    /// The other half of a Sync Shot, attached by `AppState` once both pins are loaded.
+    var syncPartnerProfile: UserProfile?
+    /// The partner's photo when it is held locally (demo Sync Shots).
+    var syncPartnerImageData: Data?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -88,6 +94,41 @@ struct PhotoPin: Identifiable, Decodable, Sendable {
         case createdAt = "created_at"
         case expiresAt = "expires_at"
         case reactions
+        case syncSessionID = "sync_session_id"
+    }
+
+    init(
+        id: UUID,
+        author: UserProfile,
+        latitude: Double,
+        longitude: Double,
+        placeName: String?,
+        caption: String,
+        imagePath: String,
+        thumbPath: String,
+        blurPath: String,
+        createdAt: Date,
+        expiresAt: Date,
+        reactions: [Reaction] = [],
+        syncSessionID: UUID? = nil,
+        syncPartnerProfile: UserProfile? = nil,
+        syncPartnerImageData: Data? = nil
+    ) {
+        self.id = id
+        self.author = author
+        self.latitude = latitude
+        self.longitude = longitude
+        self.placeName = placeName
+        self.caption = caption
+        self.imagePath = imagePath
+        self.thumbPath = thumbPath
+        self.blurPath = blurPath
+        self.createdAt = createdAt
+        self.expiresAt = expiresAt
+        self.reactions = reactions
+        self.syncSessionID = syncSessionID
+        self.syncPartnerProfile = syncPartnerProfile
+        self.syncPartnerImageData = syncPartnerImageData
     }
 
     init(from decoder: any Decoder) throws {
@@ -104,10 +145,17 @@ struct PhotoPin: Identifiable, Decodable, Sendable {
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         expiresAt = try container.decode(Date.self, forKey: .expiresAt)
         reactions = try container.decodeIfPresent([Reaction].self, forKey: .reactions) ?? []
+        syncSessionID = try container.decodeIfPresent(UUID.self, forKey: .syncSessionID)
+        syncPartnerProfile = nil
+        syncPartnerImageData = nil
     }
 
     var location: GeoPoint {
         GeoPoint(latitude: latitude, longitude: longitude)
+    }
+
+    var isSyncShot: Bool {
+        syncSessionID != nil
     }
 
     var coordinate: CLLocationCoordinate2D {
@@ -146,6 +194,8 @@ extension PhotoPin: Hashable {
             && lhs.placeName == rhs.placeName
             && lhs.reactions == rhs.reactions
             && lhs.expiresAt == rhs.expiresAt
+            && lhs.syncSessionID == rhs.syncSessionID
+            && lhs.syncPartnerProfile == rhs.syncPartnerProfile
     }
 
     func hash(into hasher: inout Hasher) {

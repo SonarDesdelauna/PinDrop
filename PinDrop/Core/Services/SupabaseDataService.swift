@@ -7,6 +7,8 @@ struct PinDraft: Sendable {
     let location: GeoPoint
     let placeName: String?
     let caption: String
+    /// Set when the pin is one half of a Sync Shot.
+    var syncSessionID: UUID? = nil
 }
 
 enum DataServiceError: LocalizedError, Sendable, Equatable {
@@ -40,6 +42,10 @@ final class SupabaseDataService: Sendable {
 
     private var pinsBucket: StorageFileApi {
         client.storage.from(SupabaseConfig.pinsBucket)
+    }
+
+    private var capsulesBucket: StorageFileApi {
+        client.storage.from("capsules")
     }
 
     private var avatarsBucket: StorageFileApi {
@@ -198,6 +204,7 @@ final class SupabaseDataService: Sendable {
             let image_path: String
             let thumb_path: String
             let blur_path: String
+            let sync_session_id: UUID?
         }
 
         let uid = try await currentUserID()
@@ -221,7 +228,8 @@ final class SupabaseDataService: Sendable {
                 caption: String(draft.caption.prefix(40)),
                 image_path: fullPath,
                 thumb_path: thumbPath,
-                blur_path: blurPath
+                blur_path: blurPath,
+                sync_session_id: draft.syncSessionID
             )
             return try await client
                 .from("pins")
@@ -448,6 +456,184 @@ final class SupabaseDataService: Sendable {
 
     func fetchSuggestions() async throws -> [SuggestionRow] {
         try await client.rpc("suggested_friends", params: ["lim": 20]).execute().value
+    }
+
+    // MARK: - Sync Shot
+
+    /// Invites a friend nearby to a Sync Shot.
+    func syncInvite(partner: UUID) async throws -> SyncSessionRow {
+        try await client.rpc("sync_invite", params: ["partner": partner]).execute().value
+    }
+
+    func syncRespond(_ session: UUID, accept: Bool) async throws {
+        struct Params: Encodable, Sendable {
+            let session: UUID
+            let accept: Bool
+        }
+        try await client.rpc("sync_respond", params: Params(session: session, accept: accept)).execute()
+    }
+
+    /// Starts the shared countdown (both phones shoot ~3.6 s later).
+    func syncArm(_ session: UUID) async throws {
+        try await client.rpc("sync_arm", params: ["session": session]).execute()
+    }
+
+    func syncCancel(_ session: UUID) async throws {
+        try await client.rpc("sync_cancel", params: ["session": session]).execute()
+    }
+
+    func syncPoll(_ session: UUID) async throws -> SyncPollRow? {
+        let rows: [SyncPollRow] = try await client.rpc("sync_poll", params: ["session": session]).execute().value
+        return rows.first
+    }
+
+    /// Sync Shot invitations addressed to you in the last 2 minutes.
+    func fetchPendingSyncInvites() async throws -> [SyncSessionRow] {
+        let uid = try await currentUserID()
+        let since = ISO8601DateFormatter().string(from: Date.now.addingTimeInterval(-120))
+        return try await client
+            .from("sync_sessions")
+            .select("id, initiator_id, partner_id, status, fire_at, created_at")
+            .eq("partner_id", value: uid)
+            .eq("status", value: "pending")
+            .gt("created_at", value: since)
+            .order("created_at", ascending: false)
+            .execute()
+            .value
+    }
+
+    /// The pins of a Sync Shot session (yours and your partner's).
+    func fetchSyncPins(session: UUID) async throws -> [PhotoPin] {
+        try await client
+            .from("pins")
+            .select(PhotoPin.selectColumns)
+            .eq("sync_session_id", value: session)
+            .execute()
+            .value
+    }
+
+    // MARK: - Cross-paths
+
+    /// Asks the server to re-check your live pins against your friends' ones.
+    func detectCrossPaths() async throws {
+        try await client.rpc("detect_cross_paths").execute()
+    }
+
+    func fetchCrossPaths() async throws -> [CrossPathRow] {
+        let since = ISO8601DateFormatter().string(from: Date.now.addingTimeInterval(-CrossPathEvent.lookback))
+        return try await client
+            .from("cross_paths")
+            .select("id, user_a, user_b, pin_a, pin_b, latitude, longitude, distance_m, delta_seconds, created_at")
+            .gt("created_at", value: since)
+            .order("created_at", ascending: false)
+            .execute()
+            .value
+    }
+
+    // MARK: - Geo-Capsules
+
+    func fetchCapsules() async throws -> [GeoCapsule] {
+        try await client
+            .from("geo_capsules")
+            .select(GeoCapsule.selectColumns)
+            .gt("expires_at", value: Self.nowISO)
+            .order("created_at", ascending: false)
+            .execute()
+            .value
+    }
+
+    /// Your openings and the openings of your own capsules.
+    func fetchCapsuleOpens() async throws -> [CapsuleOpenRow] {
+        try await client
+            .from("capsule_opens")
+            .select("capsule_id, user_id, opened_at")
+            .execute()
+            .value
+    }
+
+    func fetchCapsuleSecret(_ capsuleID: UUID) async throws -> String? {
+        let rows: [CapsuleSecret] = try await client
+            .from("capsule_secrets")
+            .select("capsule_id, message")
+            .eq("capsule_id", value: capsuleID)
+            .execute()
+            .value
+        return rows.first?.message
+    }
+
+    /// Uploads the photo and hides a new capsule at the given spot for 24 hours.
+    func createCapsule(_ draft: CapsuleDraft) async throws -> GeoCapsule {
+        struct NewCapsule: Encodable, Sendable {
+            let id: UUID
+            let latitude: Double
+            let longitude: Double
+            let hint: String
+            let image_path: String
+            let thumb_path: String
+            let recipient_id: UUID?
+        }
+        struct NewSecret: Encodable, Sendable {
+            let capsule_id: UUID
+            let message: String
+        }
+
+        let uid = try await currentUserID()
+        let capsuleID = UUID()
+        let folder = "\(Self.storageID(uid))/\(Self.storageID(capsuleID))"
+        let fullPath = "\(folder)/full.jpg"
+        let thumbPath = "\(folder)/thumb.jpg"
+        let options = FileOptions(cacheControl: "86400", contentType: "image/jpeg", upsert: false)
+
+        do {
+            _ = try await capsulesBucket.upload(fullPath, data: draft.image.fullData, options: options)
+            _ = try await capsulesBucket.upload(thumbPath, data: draft.image.thumbnailData, options: options)
+            let capsule: GeoCapsule = try await client
+                .from("geo_capsules")
+                .insert(NewCapsule(
+                    id: capsuleID,
+                    latitude: draft.location.latitude,
+                    longitude: draft.location.longitude,
+                    hint: String(draft.hint.prefix(GeoCapsule.hintLimit)),
+                    image_path: fullPath,
+                    thumb_path: thumbPath,
+                    recipient_id: draft.recipientID
+                ))
+                .select(GeoCapsule.selectColumns)
+                .single()
+                .execute()
+                .value
+            try await client
+                .from("capsule_secrets")
+                .insert(NewSecret(capsule_id: capsuleID, message: String(draft.message.prefix(GeoCapsule.messageLimit))))
+                .execute()
+            return capsule
+        } catch {
+            _ = try? await capsulesBucket.remove(paths: [fullPath, thumbPath])
+            throw error
+        }
+    }
+
+    /// Opens a capsule: the server checks that you are within 20 m of it.
+    func openCapsule(_ capsuleID: UUID, at point: GeoPoint) async throws -> Bool {
+        struct Params: Encodable, Sendable {
+            let capsule: UUID
+            let lat: Double
+            let lon: Double
+        }
+        return try await client
+            .rpc("open_capsule", params: Params(capsule: capsuleID, lat: point.latitude, lon: point.longitude))
+            .execute()
+            .value
+    }
+
+    func deleteCapsule(_ capsule: GeoCapsule) async throws {
+        try await client.from("geo_capsules").delete().eq("id", value: capsule.id).execute()
+        _ = try? await capsulesBucket.remove(paths: [capsule.imagePath, capsule.thumbPath])
+    }
+
+    /// Downloads a capsule photo (readable by its author and whoever opened it).
+    func loadCapsuleImage(path: String) async throws -> Data {
+        try await capsulesBucket.download(path: path)
     }
 
     // MARK: - Notifications

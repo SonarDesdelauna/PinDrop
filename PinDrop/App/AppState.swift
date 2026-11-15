@@ -112,6 +112,38 @@ final class AppState {
     /// Profile opened from the friends list, notifications or the map.
     var presentedProfile: UserProfile?
 
+    // MARK: Sync Shot, Sfiorati, Neon Trails, Geo-Capsules
+
+    /// "Sfiorati" of the last 6 hours, newest first.
+    private(set) var crossPaths: [CrossPathEvent] = []
+    private(set) var dismissedCrossPathIDs: Set<UUID> = []
+    /// Live Geo-Capsules you can see (yours and your friends').
+    private(set) var capsules: [GeoCapsule] = []
+    private(set) var openedCapsuleIDs: Set<UUID> = []
+    /// How many friends opened each of your capsules.
+    private(set) var capsuleOpenCounts: [UUID: Int] = [:]
+    private(set) var capsuleSecrets: [UUID: String] = [:]
+    var presentedCapsule: GeoCapsule?
+    /// The capsule that just opened, shown with a full-screen celebration.
+    var celebratingCapsule: GeoCapsule?
+    var isRecapPresented = false
+    /// The Sync Shot studio being shown.
+    var syncShotContext: SyncShotContext?
+    private(set) var incomingSyncInvite: IncomingSyncInvite?
+    /// Demo mode: fake friends, pins, a capsule and a cross-path around your real position.
+    private(set) var isDemoModeEnabled = UserDefaults.standard.bool(forKey: AppState.demoDefaultsKey)
+    private(set) var demo: DemoScenario?
+    private(set) var demoPinIDs: Set<UUID> = []
+    /// Fake position used by the demo "walk to the capsule" control.
+    private(set) var simulatedLocation: GeoPoint?
+    @ObservationIgnored private var capsuleOpenAttempts: [UUID: Date] = [:]
+    @ObservationIgnored private var demoOpenedCapsuleIDs: Set<UUID> = []
+    @ObservationIgnored private var syncInviteTask: Task<Void, Never>?
+    @ObservationIgnored private var lastCrossPathDetection: Date?
+    @ObservationIgnored private var hasLoadedCrossPaths = false
+    @ObservationIgnored private var dismissedSyncInviteIDs: Set<UUID> = []
+    nonisolated static let demoDefaultsKey = "pindrop.demo.enabled"
+
     let dataService: SupabaseDataService
     let locationService: LocationService
 
@@ -164,7 +196,7 @@ final class AppState {
     var ownActivePin: PhotoPin? {
         let now = Date.now
         return pins
-            .filter { $0.author.id == currentUser.id && !$0.isExpired(at: now) }
+            .filter { $0.author.id == currentUser.id && !$0.isExpired(at: now) && !demoPinIDs.contains($0.id) }
             .max { $0.createdAt < $1.createdAt }
     }
 
@@ -179,7 +211,7 @@ final class AppState {
 
     /// Number of friend pins currently hidden behind the blur.
     var lockedFriendPinCount: Int {
-        isUnlocked ? 0 : friendActivePins.count
+        isUnlocked ? 0 : friendActivePins.filter { isLocked($0) }.count
     }
 
     /// Distinct friends with a live drop.
@@ -195,8 +227,18 @@ final class AppState {
         pin.author.id == currentUser.id
     }
 
+    /// Friends' photos stay blurred until you drop your own, unless you crossed paths there.
     func isLocked(_ pin: PhotoPin) -> Bool {
-        !isUnlocked && !isOwn(pin)
+        !isUnlocked && !isOwn(pin) && !crossPathUnlockedPinIDs.contains(pin.id)
+    }
+
+    /// Pins unlocked for both people by a cross-path.
+    var crossPathUnlockedPinIDs: Set<UUID> {
+        Set(crossPaths.flatMap { [$0.myPinID, $0.friendPinID] })
+    }
+
+    func isDemoPin(_ pin: PhotoPin) -> Bool {
+        demoPinIDs.contains(pin.id)
     }
 
     func activePin(for friend: UserProfile) -> PhotoPin? {
@@ -234,10 +276,18 @@ final class AppState {
     /// Friends whose position is shown on the map (shared in the last 24 hours).
     var visibleFriendLocations: [FriendOnMap] {
         let cutoff = Date.now.addingTimeInterval(-86_400)
-        return friends.compactMap { friend in
+        var result = friends.compactMap { friend -> FriendOnMap? in
             guard let location = friendLocations[friend.id], location.updatedAt > cutoff else { return nil }
             return FriendOnMap(profile: friend, location: location)
         }
+        if let demo {
+            for friend in demo.friends {
+                if let location = demo.friendLocations[friend.id] {
+                    result.append(FriendOnMap(profile: friend, location: location))
+                }
+            }
+        }
+        return result
     }
 
     /// Friends who don't share their location with "Always".
@@ -285,7 +335,7 @@ final class AppState {
     }
 
     func isOnline(_ userID: UUID) -> Bool {
-        onlineFriendIDs.contains(userID)
+        onlineFriendIDs.contains(userID) || (demo?.onlineIDs.contains(userID) ?? false)
     }
 
     /// The friend you spend the most time with.
@@ -546,8 +596,10 @@ final class AppState {
         locationService.liveFixHandler = nil
     }
 
-    private func handleFix(_ point: GeoPoint) {
+    private func handleFix(_ fix: GeoPoint) {
+        let point = simulatedLocation ?? fix
         userLocation = point
+        checkCapsuleProximity(at: point)
         updatePresence(with: point)
         updateTrail(with: point)
         uploadPresenceIfNeeded(point)
@@ -773,6 +825,27 @@ final class AppState {
         friendPermissions = [:]
         isLocationRemindersPresented = false
         hasLoadedOnlineFriends = false
+        syncInviteTask?.cancel()
+        syncInviteTask = nil
+        crossPaths = []
+        dismissedCrossPathIDs = []
+        capsules = []
+        openedCapsuleIDs = []
+        capsuleOpenCounts = [:]
+        capsuleSecrets = [:]
+        presentedCapsule = nil
+        celebratingCapsule = nil
+        isRecapPresented = false
+        syncShotContext = nil
+        incomingSyncInvite = nil
+        demo = nil
+        demoPinIDs = []
+        simulatedLocation = nil
+        capsuleOpenAttempts = [:]
+        demoOpenedCapsuleIDs = []
+        lastCrossPathDetection = nil
+        hasLoadedCrossPaths = false
+        dismissedSyncInviteIDs = []
         sessionUserID = nil
         sessionPhase = .idle
         currentUser = .placeholder
@@ -809,8 +882,11 @@ final class AppState {
 
     private func loadContent() async {
         if locationService.isAuthorized, let fix = await locationService.currentLocation(maximumAge: 120) {
-            userLocation = fix
+            userLocation = simulatedLocation ?? fix
             updatePresence(with: fix)
+        }
+        if isDemoModeEnabled, demo == nil {
+            buildDemo()
         }
         await reloadPlaces()
         if let userLocation {
@@ -836,9 +912,7 @@ final class AppState {
             withAnimation(Theme.spring) {
                 currentUser = fetchedProfile
                 friendsSnapshot = fetchedFriends
-                pins = fetchedPins
-                    .filter { !$0.isExpired(at: now) }
-                    .sorted { $0.createdAt > $1.createdAt }
+                pins = composedPins(server: fetchedPins.filter { !$0.isExpired(at: now) })
                 recomputeClusters()
             }
             hasLoadedOnce = true
@@ -852,6 +926,10 @@ final class AppState {
         } catch {
             showToast(.warning, title: String(localized: "toast.error.title"), subtitle: error.localizedDescription)
         }
+        async let capsulesLoad: Void = reloadCapsules()
+        async let crossPathsLoad: Void = reloadCrossPaths()
+        async let invitesLoad: Void = pollSyncInvites()
+        _ = await (capsulesLoad, crossPathsLoad, invitesLoad)
         await deliverPings()
     }
 
@@ -872,12 +950,13 @@ final class AppState {
     func refreshUserLocation() async {
         guard locationService.isAuthorized else { return }
         if let fix = await locationService.currentLocation(maximumAge: 15) {
-            userLocation = fix
+            userLocation = simulatedLocation ?? fix
             syncWidget()
         }
     }
 
     private func startHousekeeping() {
+        startSyncInvitePolling()
         housekeepingTask?.cancel()
         housekeepingTask = Task { [weak self] in
             var tick = 0
@@ -921,9 +1000,10 @@ final class AppState {
     // MARK: - Pins
 
     /// Publishes a live drop. If the map was locked, it unlocks instantly with an animation.
-    func publish(processed: ProcessedImage, location: GeoPoint, placeName: String?, caption: String) async throws {
+    @discardableResult
+    func publish(processed: ProcessedImage, location: GeoPoint, placeName: String?, caption: String, syncSessionID: UUID? = nil) async throws -> PhotoPin {
         let wasLocked = !isUnlocked
-        let draft = PinDraft(image: processed, location: location, placeName: placeName, caption: caption)
+        let draft = PinDraft(image: processed, location: location, placeName: placeName, caption: caption, syncSessionID: syncSessionID)
         let pin = try await dataService.publishPin(draft)
         images[pin.imagePath] = processed.fullData
         images[pin.thumbPath] = processed.thumbnailData
@@ -932,6 +1012,7 @@ final class AppState {
         withAnimation(Theme.spring) {
             pins.removeAll { $0.id == pin.id }
             pins.insert(pin, at: 0)
+            pins = attachSyncPartners(pins)
             recomputeClusters()
         }
         failedImagePaths.removeAll()
@@ -952,11 +1033,22 @@ final class AppState {
             showToast(.success, title: String(localized: "toast.dropped.title"), subtitle: String(localized: "toast.dropped.subtitle"))
         }
         cameraTarget = CameraTarget(point: location, spanMeters: 1_800)
+        return pin
     }
 
     func toggleReaction(_ emoji: String, on pinID: UUID) async {
         guard let pin = pins.first(where: { $0.id == pinID }) else { return }
         HapticManager.shared.reaction()
+        if isDemoPin(pin) {
+            var copy = pin
+            if copy.hasReaction(emoji, from: currentUser.id) {
+                copy.reactions.removeAll { $0.emoji == emoji && $0.userID == currentUser.id }
+            } else {
+                copy.reactions.append(Reaction(userID: currentUser.id, emoji: emoji, createdAt: .now))
+            }
+            replacePin(copy)
+            return
+        }
         do {
             let updated = try await dataService.toggleReaction(emoji, on: pin)
             replacePin(updated)
@@ -966,7 +1058,9 @@ final class AppState {
     }
 
     func sendOnMyWay(to pin: PhotoPin, etaSeconds: TimeInterval) async throws {
-        try await dataService.sendOnMyWayPing(to: pin, etaSeconds: etaSeconds)
+        if !isDemoPin(pin) {
+            try await dataService.sendOnMyWayPing(to: pin, etaSeconds: etaSeconds)
+        }
         HapticManager.shared.success()
         let duration = LocaleFormatter.walkingDuration(seconds: etaSeconds)
         let friendName = pin.author.firstName
@@ -1167,7 +1261,24 @@ final class AppState {
     }
 
     private func recomputeClusters() {
-        clusters = GeoClustering.cluster(activePins)
+        clusters = GeoClustering.cluster(mapPins)
+    }
+
+    /// Live pins drawn on the map: each Sync Shot appears once (your half when you took part).
+    var mapPins: [PhotoPin] {
+        var seenSessions: Set<UUID> = []
+        let ordered = activePins.sorted { lhs, rhs in
+            let lhsOwn = isOwn(lhs)
+            let rhsOwn = isOwn(rhs)
+            if lhsOwn != rhsOwn { return lhsOwn }
+            return lhs.createdAt > rhs.createdAt
+        }
+        return ordered
+            .filter { pin in
+                guard let session = pin.syncSessionID else { return true }
+                return seenSessions.insert(session).inserted
+            }
+            .sorted { $0.createdAt > $1.createdAt }
     }
 
     /// Reverse-geocodes hubs and pins without a place name, in the user's locale.
@@ -1197,17 +1308,629 @@ final class AppState {
     private func syncWidget() {
         guard sessionPhase == .ready else { return }
         var thumbnails: [UUID: Data] = [:]
-        for pin in friendActivePins {
+        for pin in friendActivePins where !isDemoPin(pin) {
             if let image = thumbnail(for: pin) {
                 thumbnails[pin.id] = image.data
             }
         }
         WidgetSyncService.shared.sync(
-            pins: pins,
+            pins: pins.filter { !isDemoPin($0) },
             thumbnails: thumbnails,
             currentUserID: currentUser.id,
             isUnlocked: isUnlocked,
             userLocation: userLocation
         )
+    }
+}
+
+// MARK: - Sync Shot, Sfiorati, Neon Trails, Geo-Capsules, demo mode
+
+extension AppState {
+    // MARK: Pins composition
+
+    /// Server pins plus demo pins (newest first), with Sync Shot partners attached.
+    fileprivate func composedPins(server: [PhotoPin]) -> [PhotoPin] {
+        let now = Date.now
+        let demoPins = (demo?.pins ?? []).filter { !$0.isExpired(at: now) }
+        let serverOnly = server.filter { !demoPinIDs.contains($0.id) }
+        return attachSyncPartners((serverOnly + demoPins).sorted { $0.createdAt > $1.createdAt })
+    }
+
+    /// Fills `syncPartnerProfile` on both halves of every Sync Shot.
+    fileprivate func attachSyncPartners(_ list: [PhotoPin]) -> [PhotoPin] {
+        let bySession = Dictionary(grouping: list.filter { $0.syncSessionID != nil }) { $0.syncSessionID ?? UUID() }
+        guard !bySession.isEmpty else { return list }
+        return list.map { pin in
+            guard let session = pin.syncSessionID,
+                  let partner = bySession[session]?.first(where: { $0.id != pin.id }) else { return pin }
+            var copy = pin
+            copy.syncPartnerProfile = partner.author
+            if copy.syncPartnerImageData == nil, isDemoPin(partner) {
+                copy.syncPartnerImageData = images[partner.imagePath]
+            }
+            return copy
+        }
+    }
+
+    /// Adds or replaces pins fetched outside the regular refresh (e.g. a Sync Shot partner).
+    func ingest(_ fetched: [PhotoPin]) {
+        guard !fetched.isEmpty else { return }
+        var updated = pins
+        for pin in fetched where !pin.isExpired() {
+            updated.removeAll { $0.id == pin.id }
+            updated.append(pin)
+        }
+        withAnimation(Theme.spring) {
+            pins = attachSyncPartners(updated.sorted { $0.createdAt > $1.createdAt })
+            recomputeClusters()
+        }
+        prefetchThumbnails()
+    }
+
+    /// The other half of a Sync Shot, if it is loaded.
+    func syncPartner(of pin: PhotoPin) -> PhotoPin? {
+        guard let session = pin.syncSessionID else { return nil }
+        return pins.first { $0.syncSessionID == session && $0.id != pin.id }
+    }
+
+    // MARK: Neon Trails & Recap
+
+    /// Everyone's evening joined chronologically (people with at least two live pins).
+    var neonTrails: [NeonTrail] {
+        NeonTrail.trails(from: activePins, currentUserID: currentUser.id)
+    }
+
+    /// Statistics of your evening for the Recap.
+    var recapSummary: TrailSummary {
+        TrailSummary.make(pins: activePins, currentUserID: currentUser.id, crossPaths: crossPaths)
+    }
+
+    // MARK: Sfiorati
+
+    /// The newest cross-path still to show in the map banner.
+    var activeCrossPath: CrossPathEvent? {
+        let liveIDs = Set(activePins.map(\.id))
+        return crossPaths.first { event in
+            !dismissedCrossPathIDs.contains(event.id) && liveIDs.contains(event.myPinID) && liveIDs.contains(event.friendPinID)
+        }
+    }
+
+    private var dismissedCrossPathsKey: String? {
+        sessionUserID.map { "pindrop.crossPaths.dismissed.\($0.uuidString)" }
+    }
+
+    func dismissCrossPath(_ event: CrossPathEvent) {
+        withAnimation(Theme.spring) {
+            _ = dismissedCrossPathIDs.insert(event.id)
+        }
+        if let key = dismissedCrossPathsKey {
+            UserDefaults.standard.set(dismissedCrossPathIDs.map(\.uuidString), forKey: key)
+        }
+    }
+
+    /// Opens both photos of a cross-path side by side in the viewer.
+    func openCrossPath(_ event: CrossPathEvent) {
+        HapticManager.shared.pinTap()
+        focusMap(on: event.location, spanMeters: 500)
+        withAnimation(Theme.spring) {
+            viewerSelection = ViewerSelection(id: "cross-\(event.id.uuidString)", pinIDs: [event.friendPinID, event.myPinID], startIndex: 0)
+        }
+    }
+
+    func reloadCrossPaths() async {
+        guard sessionPhase == .ready else { return }
+        if dismissedCrossPathIDs.isEmpty, let key = dismissedCrossPathsKey,
+           let stored = UserDefaults.standard.stringArray(forKey: key) {
+            dismissedCrossPathIDs = Set(stored.compactMap(UUID.init(uuidString:)))
+        }
+        if lastCrossPathDetection.map({ Date.now.timeIntervalSince($0) > 300 }) ?? true {
+            lastCrossPathDetection = .now
+            try? await dataService.detectCrossPaths()
+        }
+        let rows = (try? await dataService.fetchCrossPaths()) ?? []
+        var profiles: [UUID: UserProfile] = [:]
+        for friend in friends {
+            profiles[friend.id] = friend
+        }
+        for pin in pins {
+            profiles[pin.author.id] = pin.author
+        }
+        let serverEvents = CrossPathsDetector.events(from: rows, currentUserID: currentUser.id, profiles: profiles)
+        applyCrossPaths(serverEvents + (demo?.crossPaths ?? []))
+    }
+
+    fileprivate func applyCrossPaths(_ events: [CrossPathEvent]) {
+        var unique: [UUID: CrossPathEvent] = [:]
+        for event in events {
+            unique[event.id] = event
+        }
+        let sorted = unique.values.sorted { $0.detectedAt > $1.detectedAt }
+        let previousIDs = Set(crossPaths.map(\.id))
+        let arrived = sorted.filter { !previousIDs.contains($0.id) && !dismissedCrossPathIDs.contains($0.id) }
+        if sorted.map(\.id) != crossPaths.map(\.id) {
+            withAnimation(Theme.spring) {
+                crossPaths = sorted
+            }
+            prefetchThumbnails()
+        }
+        if hasLoadedCrossPaths, let first = arrived.first {
+            HapticManager.shared.crossPath()
+            showToast(
+                .ping,
+                title: String(localized: "crossPath.toast.title \(first.friend.firstName)"),
+                subtitle: String(localized: "crossPath.toast.subtitle")
+            )
+        }
+        hasLoadedCrossPaths = true
+    }
+
+    // MARK: Sync Shot
+
+    /// Friends with the app open within 50 m of you: you can shoot a Sync Shot together.
+    var syncShotCandidates: [UserProfile] {
+        guard let me = userLocation else { return [] }
+        let freshness = Date.now.addingTimeInterval(-180)
+        var result = friends.filter { friend in
+            guard isOnline(friend.id), let location = friendLocations[friend.id], location.updatedAt > freshness else { return false }
+            return GeoClustering.haversineDistance(from: me, to: location.location) <= GeoClustering.hubRadiusMeters
+        }
+        if let demo {
+            for friend in demo.friends where demo.onlineIDs.contains(friend.id) {
+                if let location = demo.friendLocations[friend.id],
+                   GeoClustering.haversineDistance(from: me, to: location.location) <= GeoClustering.hubRadiusMeters {
+                    result.append(friend)
+                }
+            }
+        }
+        return result
+    }
+
+    func isDemoFriend(_ userID: UUID) -> Bool {
+        demo?.friends.contains { $0.id == userID } ?? false
+    }
+
+    /// Real friends within ~100 m: invitations are checked every few seconds.
+    private var hasRealFriendNearby: Bool {
+        guard let me = userLocation else { return false }
+        let freshness = Date.now.addingTimeInterval(-300)
+        return friends.contains { friend in
+            guard let location = friendLocations[friend.id], location.updatedAt > freshness else { return false }
+            return GeoClustering.haversineDistance(from: me, to: location.location) <= 100
+        }
+    }
+
+    fileprivate func startSyncInvitePolling() {
+        syncInviteTask?.cancel()
+        syncInviteTask = Task { [weak self] in
+            var elapsed = 0
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(4))
+                guard let self, !Task.isCancelled else { return }
+                elapsed += 4
+                if self.hasRealFriendNearby || elapsed >= 28 {
+                    elapsed = 0
+                    await self.pollSyncInvites()
+                }
+            }
+        }
+    }
+
+    func pollSyncInvites() async {
+        guard sessionPhase == .ready, syncShotContext == nil,
+              let rows = try? await dataService.fetchPendingSyncInvites() else { return }
+        guard let row = rows.first(where: { !dismissedSyncInviteIDs.contains($0.id) }) else {
+            if incomingSyncInvite != nil {
+                withAnimation(Theme.spring) {
+                    incomingSyncInvite = nil
+                }
+            }
+            return
+        }
+        guard incomingSyncInvite?.id != row.id else { return }
+        var sender = friends.first { $0.id == row.initiatorID }
+        if sender == nil {
+            sender = try? await dataService.fetchProfile(row.initiatorID)
+        }
+        guard let sender else { return }
+        HapticManager.shared.success()
+        withAnimation(Theme.spring) {
+            incomingSyncInvite = IncomingSyncInvite(session: row, from: sender)
+        }
+    }
+
+    /// Invites a friend nearby and opens the Sync Shot studio.
+    func startSyncShot(with partner: UserProfile) async {
+        HapticManager.shared.tap()
+        closeViewer()
+        isCameraPresented = false
+        if isDemoFriend(partner.id) {
+            syncShotContext = SyncShotContext(id: UUID(), partner: partner, isInitiator: true, isDemo: true)
+            return
+        }
+        do {
+            let session = try await dataService.syncInvite(partner: partner.id)
+            syncShotContext = SyncShotContext(id: session.id, partner: partner, isInitiator: true, isDemo: false)
+        } catch {
+            HapticManager.shared.error()
+            showToast(.warning, title: String(localized: "toast.error.title"), subtitle: error.localizedDescription)
+        }
+    }
+
+    func acceptSyncInvite() async {
+        guard let invite = incomingSyncInvite else { return }
+        withAnimation(Theme.spring) {
+            incomingSyncInvite = nil
+        }
+        do {
+            try await dataService.syncRespond(invite.session.id, accept: true)
+            closeViewer()
+            isCameraPresented = false
+            syncShotContext = SyncShotContext(id: invite.session.id, partner: invite.from, isInitiator: false, isDemo: false)
+        } catch {
+            HapticManager.shared.error()
+            showToast(.warning, title: String(localized: "toast.error.title"), subtitle: error.localizedDescription)
+        }
+    }
+
+    func declineSyncInvite() {
+        guard let invite = incomingSyncInvite else { return }
+        dismissedSyncInviteIDs.insert(invite.id)
+        withAnimation(Theme.spring) {
+            incomingSyncInvite = nil
+        }
+        Task { [dataService] in
+            try? await dataService.syncRespond(invite.session.id, accept: false)
+        }
+    }
+
+    func closeSyncShot() {
+        if let context = syncShotContext, !context.isDemo {
+            Task { [dataService] in
+                try? await dataService.syncCancel(context.id)
+            }
+        }
+        syncShotContext = nil
+    }
+
+    /// Demo Sync Shot: both halves are kept on this phone only.
+    @discardableResult
+    func addDemoSyncShot(mine: ProcessedImage, partnerImage: ProcessedImage, partner: UserProfile, location: GeoPoint, placeName: String?) -> PhotoPin? {
+        guard var scenario = demo else { return nil }
+        let session = UUID()
+        let now = Date.now
+        func makePin(author: UserProfile, image: ProcessedImage, offset: Double) -> PhotoPin {
+            let id = UUID()
+            let folder = "demo/\(author.id.uuidString)/\(id.uuidString)"
+            let pin = PhotoPin(
+                id: id,
+                author: author,
+                latitude: location.latitude + offset,
+                longitude: location.longitude,
+                placeName: placeName,
+                caption: "",
+                imagePath: "\(folder)/full.jpg",
+                thumbPath: "\(folder)/thumb.jpg",
+                blurPath: "\(folder)/blur.jpg",
+                createdAt: now,
+                expiresAt: now.addingTimeInterval(PhotoPin.lifetime),
+                syncSessionID: session
+            )
+            images[pin.imagePath] = image.fullData
+            images[pin.thumbPath] = image.thumbnailData
+            images[pin.blurPath] = image.blurData
+            scenario.images[pin.imagePath] = image.fullData
+            scenario.images[pin.thumbPath] = image.thumbnailData
+            scenario.images[pin.blurPath] = image.blurData
+            return pin
+        }
+        let myPin = makePin(author: currentUser, image: mine, offset: 0)
+        let partnerPin = makePin(author: partner, image: partnerImage, offset: 0.00003)
+        scenario.pins.append(contentsOf: [myPin, partnerPin])
+        applyDemo(scenario)
+        HapticManager.shared.success()
+        return pins.first { $0.id == myPin.id }
+    }
+
+    /// Opens a single pin (and its Sync Shot partner) in the viewer.
+    func openPin(_ pinID: UUID) {
+        guard let pin = pins.first(where: { $0.id == pinID }) else { return }
+        focusMap(on: pin.location, spanMeters: 700)
+        withAnimation(Theme.spring) {
+            viewerSelection = ViewerSelection(id: "pin-\(pinID.uuidString)", pinIDs: [pinID], startIndex: 0)
+        }
+    }
+
+    // MARK: Geo-Capsules
+
+    var visibleCapsules: [GeoCapsule] {
+        let now = Date.now
+        return capsules.filter { !$0.isExpired(at: now) }
+    }
+
+    func isOwnCapsule(_ capsule: GeoCapsule) -> Bool {
+        capsule.author.id == currentUser.id
+    }
+
+    func isCapsuleOpened(_ capsule: GeoCapsule) -> Bool {
+        isOwnCapsule(capsule) || openedCapsuleIDs.contains(capsule.id)
+    }
+
+    private static func capsuleImageKey(_ path: String) -> String {
+        "capsule:" + path
+    }
+
+    /// The capsule photo, available once opened (or for its author).
+    func capsuleImage(for capsule: GeoCapsule, thumbnail: Bool = false) -> PinImage? {
+        let key = Self.capsuleImageKey(thumbnail ? capsule.thumbPath : capsule.imagePath)
+        if let data = images[key] {
+            return PinImage(key: key, data: data)
+        }
+        let fallback = Self.capsuleImageKey(capsule.thumbPath)
+        return images[fallback].map { PinImage(key: fallback, data: $0) }
+    }
+
+    func capsuleSecret(for capsule: GeoCapsule) -> String? {
+        capsuleSecrets[capsule.id]
+    }
+
+    func distance(to capsule: GeoCapsule) -> Double? {
+        userLocation.map { GeoClustering.haversineDistance(from: $0, to: capsule.location) }
+    }
+
+    func reloadCapsules() async {
+        guard sessionPhase == .ready else { return }
+        guard let fetched = try? await dataService.fetchCapsules() else { return }
+        let opens = (try? await dataService.fetchCapsuleOpens()) ?? []
+        let me = currentUser.id
+        var counts: [UUID: Int] = [:]
+        var opened = demoOpenedCapsuleIDs
+        for open in opens {
+            if open.userID == me {
+                opened.insert(open.capsuleID)
+            } else {
+                counts[open.capsuleID, default: 0] += 1
+            }
+        }
+        let demoCapsules = demo?.capsules ?? []
+        withAnimation(Theme.spring) {
+            capsules = fetched + demoCapsules
+            openedCapsuleIDs = opened
+            capsuleOpenCounts = counts
+        }
+        for capsule in capsules where isCapsuleOpened(capsule) {
+            Task { [weak self] in
+                await self?.loadCapsuleContent(capsule)
+            }
+        }
+        if let userLocation {
+            checkCapsuleProximity(at: userLocation)
+        }
+    }
+
+    /// Downloads the photo and the secret message of an opened capsule.
+    func loadCapsuleContent(_ capsule: GeoCapsule) async {
+        guard isCapsuleOpened(capsule) else { return }
+        if demo?.capsuleIDs.contains(capsule.id) == true {
+            if let message = demo?.capsuleSecrets[capsule.id] {
+                capsuleSecrets[capsule.id] = message
+            }
+            for path in [capsule.imagePath, capsule.thumbPath] {
+                if let data = demo?.images[path] {
+                    images[Self.capsuleImageKey(path)] = data
+                }
+            }
+            return
+        }
+        if capsuleSecrets[capsule.id] == nil, let message = try? await dataService.fetchCapsuleSecret(capsule.id) {
+            capsuleSecrets[capsule.id] = message
+        }
+        for path in [capsule.thumbPath, capsule.imagePath] {
+            let key = Self.capsuleImageKey(path)
+            guard images[key] == nil, !imageLoadsInFlight.contains(key), !failedImagePaths.contains(key) else { continue }
+            imageLoadsInFlight.insert(key)
+            if let data = try? await dataService.loadCapsuleImage(path: path) {
+                images[key] = data
+            } else {
+                failedImagePaths.insert(key)
+            }
+            imageLoadsInFlight.remove(key)
+        }
+    }
+
+    /// Hides a Geo-Capsule at the current spot for 24 hours.
+    func hideCapsule(processed: ProcessedImage, location: GeoPoint, hint: String, message: String, recipient: UserProfile?) async throws {
+        let draft = CapsuleDraft(
+            image: processed,
+            location: location,
+            hint: hint.trimmingCharacters(in: .whitespacesAndNewlines),
+            message: message.trimmingCharacters(in: .whitespacesAndNewlines),
+            recipientID: recipient?.id
+        )
+        let capsule = try await dataService.createCapsule(draft)
+        images[Self.capsuleImageKey(capsule.imagePath)] = processed.fullData
+        images[Self.capsuleImageKey(capsule.thumbPath)] = processed.thumbnailData
+        capsuleSecrets[capsule.id] = draft.message
+        withAnimation(Theme.spring) {
+            capsules.insert(capsule, at: 0)
+        }
+        HapticManager.shared.success()
+        if let recipient {
+            showToast(.success, title: String(localized: "capsule.toast.hidden.title"), subtitle: String(localized: "capsule.toast.hidden.for \(recipient.firstName)"))
+        } else {
+            showToast(.success, title: String(localized: "capsule.toast.hidden.title"), subtitle: String(localized: "capsule.toast.hidden.everyone"))
+        }
+        cameraTarget = CameraTarget(point: location, spanMeters: 800)
+    }
+
+    func deleteCapsule(_ capsule: GeoCapsule) async {
+        presentedCapsule = nil
+        withAnimation(Theme.spring) {
+            capsules.removeAll { $0.id == capsule.id }
+        }
+        guard demo?.capsuleIDs.contains(capsule.id) != true else { return }
+        do {
+            try await dataService.deleteCapsule(capsule)
+            HapticManager.shared.selection()
+        } catch {
+            showToast(.warning, title: String(localized: "toast.error.title"), subtitle: error.localizedDescription)
+            await reloadCapsules()
+        }
+    }
+
+    /// Opens every friend's capsule you are standing next to (under 20 m).
+    fileprivate func checkCapsuleProximity(at point: GeoPoint) {
+        let now = Date.now
+        for capsule in visibleCapsules where !isCapsuleOpened(capsule) {
+            guard GeoClustering.haversineDistance(from: point, to: capsule.location) <= GeoCapsule.unlockRadius else { continue }
+            if let last = capsuleOpenAttempts[capsule.id], now.timeIntervalSince(last) < 15 { continue }
+            capsuleOpenAttempts[capsule.id] = now
+            Task { [weak self] in
+                await self?.openCapsule(capsule, at: point)
+            }
+        }
+    }
+
+    private func openCapsule(_ capsule: GeoCapsule, at point: GeoPoint) async {
+        let success: Bool
+        if demo?.capsuleIDs.contains(capsule.id) == true {
+            demoOpenedCapsuleIDs.insert(capsule.id)
+            success = true
+        } else {
+            success = (try? await dataService.openCapsule(capsule.id, at: point)) ?? false
+        }
+        guard success else { return }
+        withAnimation(Theme.spring) {
+            _ = openedCapsuleIDs.insert(capsule.id)
+        }
+        await loadCapsuleContent(capsule)
+        HapticManager.shared.capsuleOpened()
+        presentedCapsule = nil
+        withAnimation(Theme.spring) {
+            celebratingCapsule = capsule
+        }
+    }
+
+    // MARK: Demo mode
+
+    func setDemoMode(_ enabled: Bool) {
+        isDemoModeEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.demoDefaultsKey)
+        if enabled {
+            buildDemo()
+            HapticManager.shared.success()
+            if let anchor = demo?.anchor {
+                focusMap(on: anchor, spanMeters: 2_400)
+            }
+        } else {
+            removeDemo()
+            HapticManager.shared.selection()
+        }
+    }
+
+    fileprivate func buildDemo() {
+        let anchor = userLocation ?? locationService.lastFix ?? .fallback
+        applyDemo(MockDataService.makeScenario(anchor: anchor, currentUser: currentUser))
+    }
+
+    /// Installs (or updates) the demo scenario on top of the real data.
+    fileprivate func applyDemo(_ scenario: DemoScenario) {
+        let previousPinIDs = demoPinIDs
+        let previousCapsuleIDs = demo?.capsuleIDs ?? []
+        demo = scenario
+        demoPinIDs = scenario.pinIDs
+        for (path, data) in scenario.images {
+            images[path] = data
+        }
+        for capsule in scenario.capsules where isCapsuleOpened(capsule) || demoOpenedCapsuleIDs.contains(capsule.id) {
+            if let data = scenario.images[capsule.imagePath] {
+                images[Self.capsuleImageKey(capsule.imagePath)] = data
+            }
+            if let data = scenario.images[capsule.thumbPath] {
+                images[Self.capsuleImageKey(capsule.thumbPath)] = data
+            }
+        }
+        let serverPins = pins.filter { !previousPinIDs.contains($0.id) }
+        let serverCapsules = capsules.filter { !previousCapsuleIDs.contains($0.id) }
+        withAnimation(Theme.spring) {
+            pins = composedPins(server: serverPins)
+            capsules = serverCapsules + scenario.capsules
+            recomputeClusters()
+        }
+        applyCrossPaths(crossPaths.filter { event in !previousPinIDs.contains(event.myPinID) } + scenario.crossPaths)
+        resolveMissingPlaceNames()
+    }
+
+    fileprivate func removeDemo() {
+        let pinIDs = demoPinIDs
+        let capsuleIDs = demo?.capsuleIDs ?? []
+        demo = nil
+        demoPinIDs = []
+        demoOpenedCapsuleIDs = []
+        simulatedLocation = nil
+        withAnimation(Theme.spring) {
+            pins = attachSyncPartners(pins.filter { !pinIDs.contains($0.id) })
+            capsules.removeAll { capsuleIDs.contains($0.id) }
+            openedCapsuleIDs.subtract(capsuleIDs)
+            crossPaths.removeAll { pinIDs.contains($0.myPinID) || pinIDs.contains($0.friendPinID) }
+            recomputeClusters()
+        }
+        if syncShotContext?.isDemo == true {
+            syncShotContext = nil
+        }
+        Task { [weak self] in
+            await self?.refreshUserLocation()
+        }
+    }
+
+    /// Demo control: moves your position next to the demo capsule to test the 20 m unlock.
+    func simulateCapsuleApproach() {
+        if demo == nil {
+            setDemoMode(true)
+        }
+        guard let scenario = demo, let capsule = scenario.capsules.first else { return }
+        // Make the test repeatable: close the capsule again first.
+        demoOpenedCapsuleIDs.remove(capsule.id)
+        openedCapsuleIDs.remove(capsule.id)
+        capsuleOpenAttempts[capsule.id] = nil
+        let target = MockDataService.point(from: capsule.location, meters: 8, bearing: 30)
+        simulatedLocation = target
+        userLocation = target
+        isFriendsDrawerPresented = false
+        showToast(.info, title: String(localized: "demo.toast.walking.title"), subtitle: String(localized: "demo.toast.walking.subtitle"))
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(450))
+            self?.focusMap(on: target, spanMeters: 420)
+            try? await Task.sleep(for: .milliseconds(1_300))
+            self?.checkCapsuleProximity(at: target)
+        }
+    }
+
+    /// Demo control: goes back to the real GPS position.
+    func endLocationSimulation() {
+        simulatedLocation = nil
+        Task { [weak self] in
+            await self?.refreshUserLocation()
+            if let point = self?.userLocation {
+                self?.focusMap(on: point, spanMeters: 1_800)
+            }
+        }
+    }
+
+    /// Demo control: creates a cross-path with a demo friend right where you are.
+    func generateDemoCrossPath() {
+        if demo == nil {
+            setDemoMode(true)
+        }
+        guard var scenario = demo else { return }
+        let center = userLocation ?? scenario.anchor
+        guard let event = MockDataService.addCrossPath(to: &scenario, near: center, currentUser: currentUser) else { return }
+        dismissedCrossPathIDs.remove(event.id)
+        applyDemo(scenario)
+        isFriendsDrawerPresented = false
+        HapticManager.shared.crossPath()
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(450))
+            self?.focusMap(on: event.location, spanMeters: 520)
+        }
     }
 }

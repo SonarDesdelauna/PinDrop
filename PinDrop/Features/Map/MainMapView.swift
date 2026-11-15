@@ -47,14 +47,38 @@ struct MainMapView: View {
                     .zIndex(10)
             }
 
+            if let capsule = appState.celebratingCapsule {
+                CapsuleUnlockCelebrationView(capsule: capsule)
+                    .transition(.opacity)
+                    .zIndex(15)
+            }
+
             toastLayer
                 .zIndex(20)
         }
         .background(Theme.obsidian)
+        .animation(Theme.spring, value: appState.celebratingCapsule)
         .animation(Theme.spring, value: appState.viewerSelection)
         .animation(Theme.spring, value: appState.toast)
         .fullScreenCover(isPresented: $state.isCameraPresented) {
             CameraStudioView()
+        }
+        .fullScreenCover(item: $state.syncShotContext) { context in
+            SyncShotStudioView(context: context)
+        }
+        .sheet(item: $state.presentedCapsule) { capsule in
+            GeoCapsuleSheet(capsule: capsule)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.ultraThinMaterial)
+                .presentationCornerRadius(Theme.Radius.sheet)
+        }
+        .sheet(isPresented: $state.isRecapPresented) {
+            NightRecapSheet()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.ultraThinMaterial)
+                .presentationCornerRadius(Theme.Radius.sheet)
         }
         .sheet(isPresented: $state.isPlacesPresented) {
             PlacesView(
@@ -158,7 +182,7 @@ struct MainMapView: View {
     private var mergedOwnPins: [PhotoPin] {
         guard let userLocation = appState.userLocation else { return [] }
         return appState.activePins
-            .filter { appState.isOwn($0) && GeoClustering.haversineDistance(from: $0.location, to: userLocation) <= Self.ownPinMergeDistance }
+            .filter { appState.isOwn($0) && !appState.isDemoPin($0) && !$0.isSyncShot && GeoClustering.haversineDistance(from: $0.location, to: userLocation) <= Self.ownPinMergeDistance }
             .sorted { $0.expiresAt > $1.expiresAt }
     }
 
@@ -220,6 +244,27 @@ struct MainMapView: View {
         return appState.places.filter { $0.id != current.id }
     }
 
+    /// Friends' capsules still locked and close enough to show their 20 m circle.
+    private var nearbyLockedCapsules: [GeoCapsule] {
+        guard let user = appState.userLocation else { return [] }
+        return appState.visibleCapsules.filter { capsule in
+            !appState.isCapsuleOpened(capsule)
+                && GeoClustering.haversineDistance(from: user, to: capsule.location) <= GeoCapsule.circleVisibleDistance
+        }
+    }
+
+    /// Neon trail colors: your accent gradient, each friend's own color.
+    private func trailColor(for trail: NeonTrail) -> Color {
+        trail.isCurrentUser ? Theme.neonPurple : Color(hexString: trail.user.avatarColorHex)
+    }
+
+    private func trailStyle(for trail: NeonTrail) -> AnyShapeStyle {
+        if trail.isCurrentUser {
+            return AnyShapeStyle(LinearGradient(colors: [Theme.electricViolet, Theme.neonPurple], startPoint: .leading, endPoint: .trailing))
+        }
+        return AnyShapeStyle(Color(hexString: trail.user.avatarColorHex).opacity(0.7))
+    }
+
     private func openOwnPins(_ pins: [PhotoPin]) {
         guard let first = pins.first else { return }
         HapticManager.shared.pinTap()
@@ -231,6 +276,26 @@ struct MainMapView: View {
     private var mapLayer: some View {
         let skidSegments = SkidMarks.segments(trail: appState.trail, current: currentSpeed == nil ? nil : appState.userLocation)
         return Map(position: $cameraPosition, interactionModes: .all) {
+            ForEach(appState.neonTrails) { trail in
+                let coordinates = trail.points.map { displayCoordinate(for: $0) }
+                MapPolyline(coordinates: coordinates)
+                    .stroke(
+                        trailColor(for: trail).opacity(trail.isCurrentUser ? 0.35 : 0.2),
+                        style: StrokeStyle(lineWidth: 10, lineCap: .round, lineJoin: .round)
+                    )
+                MapPolyline(coordinates: coordinates)
+                    .stroke(
+                        trailStyle(for: trail),
+                        style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round, dash: [8, 6])
+                    )
+            }
+
+            ForEach(nearbyLockedCapsules) { capsule in
+                MapCircle(center: capsule.coordinate, radius: GeoCapsule.unlockRadius)
+                    .foregroundStyle(Color(hex: 0xF59E0B).opacity(0.16))
+                    .stroke(Color(hex: 0xF59E0B).opacity(0.85), lineWidth: 1.5)
+            }
+
             ForEach(skidSegments) { segment in
                 MapPolyline(coordinates: segment.coordinates)
                     .stroke(
@@ -269,7 +334,13 @@ struct MainMapView: View {
                 Annotation(item.profile.displayName, coordinate: displayCoordinate(for: item.location.location), anchor: .bottom) {
                     Button {
                         HapticManager.shared.tap()
-                        appState.openProfile(item.profile)
+                        if appState.isDemoFriend(item.profile.id) {
+                            if appState.syncShotCandidates.contains(where: { $0.id == item.profile.id }) {
+                                Task { await appState.startSyncShot(with: item.profile) }
+                            }
+                        } else {
+                            appState.openProfile(item.profile)
+                        }
                     } label: {
                         FriendLocationAnnotationView(
                             user: item.profile,
@@ -278,6 +349,31 @@ struct MainMapView: View {
                         )
                     }
                     .buttonStyle(PressableButtonStyle())
+                }
+                .annotationTitles(.hidden)
+            }
+
+            ForEach(appState.visibleCapsules) { capsule in
+                Annotation("", coordinate: displayCoordinate(for: capsule.location), anchor: .bottom) {
+                    Button {
+                        HapticManager.shared.tap()
+                        appState.presentedCapsule = capsule
+                    } label: {
+                        GeoCapsuleAnnotationView(
+                            author: capsule.author,
+                            isOpened: appState.isCapsuleOpened(capsule),
+                            isOwn: appState.isOwnCapsule(capsule),
+                            distanceText: appState.distanceText(to: capsule.location)
+                        )
+                    }
+                    .buttonStyle(PressableButtonStyle())
+                }
+                .annotationTitles(.hidden)
+            }
+
+            if let event = appState.activeCrossPath {
+                Annotation("", coordinate: event.location.coordinate, anchor: .center) {
+                    CrossPathMarkerView(friend: event.friend)
                 }
                 .annotationTitles(.hidden)
             }
@@ -346,6 +442,7 @@ struct MainMapView: View {
                     placeName: appState.placeName(for: cluster),
                     currentUserID: appState.currentUser.id,
                     isAppUnlocked: appState.isUnlocked,
+                    unlockedPinIDs: appState.crossPathUnlockedPinIDs,
                     distanceText: appState.distanceText(to: cluster.center),
                     namespace: heroNamespace,
                     inactiveHeroPinIDs: inactiveHeroIDs
@@ -377,7 +474,41 @@ struct MainMapView: View {
     private var overlayChrome: some View {
         VStack(spacing: 12) {
             topHUD
+            if let invite = appState.incomingSyncInvite {
+                SyncInviteBanner(
+                    invite: invite,
+                    onAccept: {
+                        HapticManager.shared.tap()
+                        Task { await appState.acceptSyncInvite() }
+                    },
+                    onDecline: {
+                        HapticManager.shared.selection()
+                        appState.declineSyncInvite()
+                    }
+                )
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
             Spacer(minLength: 0)
+            if let event = appState.activeCrossPath {
+                CrossPathBannerView(
+                    event: event,
+                    onCompare: {
+                        appState.openCrossPath(event)
+                    },
+                    onDismiss: {
+                        HapticManager.shared.selection()
+                        appState.dismissCrossPath(event)
+                    }
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            let candidates = appState.syncShotCandidates
+            if !candidates.isEmpty {
+                SyncShotPill(candidates: candidates) { friend in
+                    Task { await appState.startSyncShot(with: friend) }
+                }
+                .transition(.scale(scale: 0.8).combined(with: .opacity))
+            }
             locationBanners
             if appState.lockedFriendPinCount > 0 {
                 lockedBanner
@@ -392,6 +523,9 @@ struct MainMapView: View {
         .animation(Theme.spring, value: currentSpeed == nil)
         .animation(Theme.spring, value: appState.isAlwaysBannerDismissed)
         .animation(Theme.spring, value: appState.isFriendsLocationBannerDismissed)
+        .animation(Theme.spring, value: appState.activeCrossPath)
+        .animation(Theme.spring, value: appState.incomingSyncInvite)
+        .animation(Theme.spring, value: appState.syncShotCandidates.map(\.id))
     }
 
     /// Profile views centered at the top, avatar and bell on the right, speed on the left
@@ -408,6 +542,7 @@ struct MainMapView: View {
                 VStack(spacing: 10) {
                     profileButton
                     bellButton
+                    recapButton
                 }
             }
             ViewThatFits(in: .horizontal) {
@@ -526,6 +661,29 @@ struct MainMapView: View {
         .buttonStyle(PressableButtonStyle())
         .accessibilityLabel(Text("notifications.title"))
         .accessibilityValue(Text("notifications.unread \(unread)"))
+    }
+
+    /// Opens the evening recap (stats + shareable story card).
+    private var recapButton: some View {
+        Button {
+            HapticManager.shared.tap()
+            appState.isRecapPresented = true
+        } label: {
+            VStack(spacing: 1) {
+                Image(systemName: "sparkles.rectangle.stack.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                Text("recap.hud")
+                    .font(Theme.roundedFixed(9, weight: .heavy))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .foregroundStyle(Theme.neonPurple)
+            .frame(width: 48, height: 48)
+            .contentShape(Circle())
+            .glassCircle(interactive: true)
+        }
+        .buttonStyle(PressableButtonStyle())
+        .accessibilityLabel(Text("recap.title"))
     }
 
     /// Red warnings shown every time the app is opened: your location is only "While Using",
