@@ -24,3 +24,5 @@ dist/
 android/src-tauri/target/
 android/src-tauri/gen/
 android/ui/vendor/
+android/node_modules/
+android/package-lock.json

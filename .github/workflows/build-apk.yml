@@ -35,7 +35,7 @@ jobs:
       - name: Tools
         run: |
           echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
-          npm install -g @tauri-apps/cli@2
+          cd android && npm install
 
       - name: Vendor Leaflet
         run: |
@@ -44,17 +44,17 @@ jobs:
           curl -fsSL https://unpkg.com/leaflet@1.9.4/dist/leaflet.css -o android/ui/vendor/leaflet.css
 
       - name: Init Android project
-        working-directory: android/src-tauri
+        working-directory: android
         run: |
-          tauri android init --ci
-          tauri icon app-icon.png
-          MANIFEST=gen/android/app/src/main/AndroidManifest.xml
+          npm run tauri -- android init --ci
+          npm run tauri -- icon src-tauri/app-icon.png
+          MANIFEST=src-tauri/gen/android/app/src/main/AndroidManifest.xml
           sed -i '0,/<application/s//<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" \/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" \/>\n    <uses-feature android:name="android.hardware.location.gps" android:required="false" \/>\n    <application/' "$MANIFEST"
           cat "$MANIFEST"
 
       - name: Build APK
-        working-directory: android/src-tauri
-        run: tauri android build --apk --ci --target aarch64 armv7
+        working-directory: android
+        run: npm run tauri -- android build --apk --ci --target aarch64 armv7
 
       - name: Sign APK
         run: |
