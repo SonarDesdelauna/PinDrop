@@ -2,14 +2,29 @@ import SwiftUI
 
 // MARK: - Glass background
 
-/// Glassmorphism background: ultra-thin material + tinted surface + luminous 1pt gradient border.
+/// Glass background. On iOS 26+ it is the system Liquid Glass, so it follows the look chosen in
+/// Settings › Display & Brightness › Liquid Glass (Clear or Tinted). Earlier versions use
+/// an ultra-thin material + tinted surface + luminous 1pt gradient border.
 struct GlassBackground<S: InsettableShape>: ViewModifier {
     let shape: S
     var tint: Color = Theme.surface
     var tintOpacity: Double = Theme.surfaceOpacity
     var shadowRadius: CGFloat = 22
+    /// Reacts to touches (scale + light) like system glass buttons.
+    var isInteractive = false
+    /// Color tint for prominent glass (e.g. the accent color).
+    var glassTint: Color?
 
     func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(Glass.regular.tint(glassTint).interactive(isInteractive), in: shape)
+        } else {
+            legacy(content)
+        }
+    }
+
+    private func legacy(_ content: Content) -> some View {
         content
             .background {
                 shape
@@ -23,6 +38,11 @@ struct GlassBackground<S: InsettableShape>: ViewModifier {
                     .allowsHitTesting(false)
             }
             .shadow(color: Color.black.opacity(0.35), radius: shadowRadius, x: 0, y: 10)
+            .background {
+                if let glassTint {
+                    shape.fill(glassTint.opacity(0.55))
+                }
+            }
     }
 }
 
@@ -114,12 +134,28 @@ struct PrimaryGradientButtonStyle: ButtonStyle {
             .padding(.vertical, 16)
             .padding(.horizontal, 22)
             .frame(maxWidth: fullWidth ? .infinity : nil)
-            .background { Capsule().fill(Theme.accentGradient) }
-            .overlay { Capsule().strokeBorder(Color.white.opacity(0.22), lineWidth: 1) }
-            .shadow(color: Theme.electricViolet.opacity(isEnabled ? 0.45 : 0), radius: 18, x: 0, y: 8)
+            .modifier(PrimaryButtonBackground(isEnabled: isEnabled))
             .opacity(isEnabled ? 1 : 0.45)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .animation(Theme.spring, value: configuration.isPressed)
+    }
+}
+
+/// Accent-tinted Liquid Glass capsule on iOS 26+, gradient capsule before.
+private struct PrimaryButtonBackground: ViewModifier {
+    let isEnabled: Bool
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .contentShape(Capsule())
+                .glassEffect(Glass.regular.tint(Theme.electricViolet).interactive(), in: Capsule())
+        } else {
+            content
+                .background { Capsule().fill(Theme.accentGradient) }
+                .overlay { Capsule().strokeBorder(Color.white.opacity(0.22), lineWidth: 1) }
+                .shadow(color: Theme.electricViolet.opacity(isEnabled ? 0.45 : 0), radius: 18, x: 0, y: 8)
+        }
     }
 }
 
@@ -136,7 +172,8 @@ struct GlassButtonStyle: ButtonStyle {
             .padding(.vertical, 14)
             .padding(.horizontal, 20)
             .frame(maxWidth: fullWidth ? .infinity : nil)
-            .modifier(GlassBackground(shape: Capsule(), shadowRadius: 10))
+            .contentShape(Capsule())
+            .modifier(GlassBackground(shape: Capsule(), shadowRadius: 10, isInteractive: true))
             .opacity(isEnabled ? 1 : 0.45)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .animation(Theme.spring, value: configuration.isPressed)
@@ -153,8 +190,8 @@ struct CircleGlassButtonStyle: ButtonStyle {
             .font(.system(size: diameter * 0.36, weight: .bold))
             .foregroundStyle(Theme.textPrimary)
             .frame(width: diameter, height: diameter)
-            .modifier(GlassBackground(shape: Circle(), shadowRadius: 8))
             .contentShape(Circle())
+            .modifier(GlassBackground(shape: Circle(), shadowRadius: 8, isInteractive: true))
             .opacity(isEnabled ? 1 : 0.4)
             .scaleEffect(configuration.isPressed ? 0.92 : 1)
             .animation(Theme.spring, value: configuration.isPressed)
@@ -180,12 +217,12 @@ extension View {
         modifier(GlassBackground(shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)))
     }
 
-    func glassCapsule() -> some View {
-        modifier(GlassBackground(shape: Capsule(), shadowRadius: 14))
+    func glassCapsule(interactive: Bool = false, tint: Color? = nil) -> some View {
+        modifier(GlassBackground(shape: Capsule(), shadowRadius: 14, isInteractive: interactive, glassTint: tint))
     }
 
-    func glassCircle() -> some View {
-        modifier(GlassBackground(shape: Circle(), shadowRadius: 12))
+    func glassCircle(interactive: Bool = false, tint: Color? = nil) -> some View {
+        modifier(GlassBackground(shape: Circle(), shadowRadius: 12, isInteractive: interactive, glassTint: tint))
     }
 
     func shimmer(isActive: Bool = true) -> some View {

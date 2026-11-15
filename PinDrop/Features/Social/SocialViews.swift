@@ -232,13 +232,8 @@ struct SmallPillButtonStyle: ButtonStyle {
             .lineLimit(1)
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
-            .background {
-                if isProminent {
-                    Capsule().fill(Theme.accentGradient)
-                } else {
-                    Capsule().fill(Color.white.opacity(0.1))
-                }
-            }
+            .contentShape(Capsule())
+            .glassCapsule(interactive: true, tint: isProminent ? Theme.electricViolet : nil)
             .scaleEffect(configuration.isPressed ? 0.95 : 1)
             .animation(.snappy(duration: 0.2), value: configuration.isPressed)
     }

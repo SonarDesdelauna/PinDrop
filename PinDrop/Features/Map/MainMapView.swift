@@ -441,7 +441,8 @@ struct MainMapView: View {
             .lineLimit(1)
             .padding(.horizontal, 11)
             .padding(.vertical, 7)
-            .glassCapsule()
+            .contentShape(Capsule())
+            .glassCapsule(interactive: true)
             .fixedSize()
         }
         .buttonStyle(PressableButtonStyle())
@@ -550,7 +551,8 @@ struct MainMapView: View {
                 .foregroundStyle(Theme.textPrimary)
                 .symbolEffect(.bounce, value: unread)
                 .frame(width: 48, height: 48)
-                .glassCircle()
+                .contentShape(Circle())
+                .glassCircle(interactive: true)
                 .overlay(alignment: .topTrailing) {
                     if unread > 0 {
                         Text(min(unread, 99), format: .number)
@@ -631,7 +633,7 @@ struct MainMapView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .glassCapsule()
+        .modifier(DockBackground())
     }
 
     private func dockButton(systemImage: String, label: LocalizedStringKey, badge: Int, action: @escaping () -> Void) -> some View {
@@ -640,7 +642,8 @@ struct MainMapView: View {
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary)
                 .frame(width: 48, height: 48)
-                .background(Circle().fill(Color.white.opacity(0.06)))
+                .contentShape(Circle())
+                .glassCircle(interactive: true)
                 .overlay(alignment: .topTrailing) {
                     if badge > 0 {
                         Text(badge, format: .number)
@@ -662,18 +665,12 @@ struct MainMapView: View {
             HapticManager.shared.tap()
             appState.presentCamera()
         } label: {
-            ZStack {
-                Circle()
-                    .strokeBorder(Color.white.opacity(0.9), lineWidth: 3)
-                    .frame(width: 80, height: 80)
-                Circle()
-                    .fill(Theme.accentGradient)
-                    .frame(width: 66, height: 66)
-                    .glow(Theme.electricViolet, radius: 16)
-                Image(systemName: "camera.fill")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(Color.white)
-            }
+            Image(systemName: "camera.fill")
+                .font(.system(size: 26, weight: .bold))
+                .foregroundStyle(Color.white)
+                .frame(width: 76, height: 76)
+                .contentShape(Circle())
+                .glassCircle(interactive: true, tint: Theme.electricViolet)
         }
         .buttonStyle(PressableButtonStyle(pressedScale: 0.9))
         .accessibilityLabel(Text("dock.drop"))
@@ -725,6 +722,20 @@ struct MainMapView: View {
 
     private func region(around point: GeoPoint, spanMeters: Double) -> MKCoordinateRegion {
         MKCoordinateRegion(center: point.coordinate, latitudinalMeters: spanMeters, longitudinalMeters: spanMeters)
+    }
+}
+
+/// The dock is a single glass bar before iOS 26; on iOS 26+ the buttons are separate Liquid
+/// Glass circles grouped in a container, like the system bars.
+private struct DockBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer(spacing: 0) {
+                content
+            }
+        } else {
+            content.glassCapsule()
+        }
     }
 }
 
