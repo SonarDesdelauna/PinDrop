@@ -279,15 +279,14 @@ struct PlacesView: View {
                     .lineLimit(1)
                 }
                 Spacer(minLength: 8)
-                VStack(spacing: 0) {
-                    Text(place.visitCount, format: .number)
-                        .font(Theme.rounded(.title3, weight: .heavy))
-                        .foregroundStyle(Theme.textPrimary)
-                        .contentTransition(.numericText())
-                    Text("places.visitsLabel \(place.visitCount)")
-                        .font(Theme.text(.caption2))
-                        .foregroundStyle(Theme.textSecondary)
-                }
+                Text("places.visits \(place.visitCount)")
+                    .font(Theme.rounded(.subheadline, weight: .heavy))
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .glassCapsule()
+                    .fixedSize()
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
