@@ -633,17 +633,16 @@ struct MainMapView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .modifier(DockBackground())
+        .glassCapsule()
     }
 
     private func dockButton(systemImage: String, label: LocalizedStringKey, badge: Int, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 20, weight: .semibold))
+                .font(.system(size: 22, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary)
                 .frame(width: 48, height: 48)
                 .contentShape(Circle())
-                .glassCircle(interactive: true)
                 .overlay(alignment: .topTrailing) {
                     if badge > 0 {
                         Text(badge, format: .number)
@@ -666,11 +665,10 @@ struct MainMapView: View {
             appState.presentCamera()
         } label: {
             Image(systemName: "camera.fill")
-                .font(.system(size: 26, weight: .bold))
-                .foregroundStyle(Color.white)
-                .frame(width: 76, height: 76)
+                .font(.system(size: 34, weight: .bold))
+                .foregroundStyle(Theme.accentGradient)
+                .frame(width: 64, height: 64)
                 .contentShape(Circle())
-                .glassCircle(interactive: true, tint: Theme.electricViolet)
         }
         .buttonStyle(PressableButtonStyle(pressedScale: 0.9))
         .accessibilityLabel(Text("dock.drop"))
@@ -722,20 +720,6 @@ struct MainMapView: View {
 
     private func region(around point: GeoPoint, spanMeters: Double) -> MKCoordinateRegion {
         MKCoordinateRegion(center: point.coordinate, latitudinalMeters: spanMeters, longitudinalMeters: spanMeters)
-    }
-}
-
-/// The dock is a single glass bar before iOS 26; on iOS 26+ the buttons are separate Liquid
-/// Glass circles grouped in a container, like the system bars.
-private struct DockBackground: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            GlassEffectContainer(spacing: 0) {
-                content
-            }
-        } else {
-            content.glassCapsule()
-        }
     }
 }
 
