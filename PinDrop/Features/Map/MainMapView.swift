@@ -404,14 +404,15 @@ struct MainMapView: View {
                     .foregroundStyle(Theme.neonPurple)
                 if compact {
                     Text(appState.currentUser.viewCount, format: .number)
+                        .foregroundStyle(Theme.neonPurple)
                         .contentTransition(.numericText())
                 } else {
-                    Text("hud.profileViews \(appState.currentUser.viewCount)")
+                    Text(Self.viewsLabel(appState.currentUser.viewCount))
                         .contentTransition(.numericText())
                 }
             }
             .font(Theme.rounded(.footnote, weight: .bold))
-            .foregroundStyle(Theme.neonPurple)
+            .foregroundStyle(Theme.textPrimary)
             .lineLimit(1)
             .padding(.horizontal, 11)
             .padding(.vertical, 7)
@@ -422,6 +423,17 @@ struct MainMapView: View {
         .buttonStyle(PressableButtonStyle())
         .animation(Theme.spring, value: appState.currentUser.viewCount)
         .accessibilityLabel(Text("hud.profileViews \(appState.currentUser.viewCount)"))
+    }
+
+    /// "N profile views" with only the number in the accent color.
+    private static func viewsLabel(_ count: Int) -> AttributedString {
+        var label = AttributedString(localized: "hud.profileViews \(count)")
+        label.foregroundColor = Theme.textPrimary
+        let number = count.formatted(.number)
+        if let range = label.range(of: number) {
+            label[range].foregroundColor = Theme.neonPurple
+        }
+        return label
     }
 
     private func speedPill(_ speed: Double) -> some View {
@@ -550,18 +562,18 @@ struct MainMapView: View {
                 appState.isFriendsDrawerPresented = true
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
         .glassCapsule()
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 6)
     }
 
     private func dockButton(systemImage: String, label: LocalizedStringKey, badge: Int, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Theme.neonPurple)
-                .frame(width: 42, height: 42)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
+                .frame(width: 46, height: 46)
                 .contentShape(Circle())
                 .overlay(alignment: .topTrailing) {
                     if badge > 0 {
@@ -585,9 +597,9 @@ struct MainMapView: View {
             appState.presentCamera()
         } label: {
             Image(systemName: "camera.fill")
-                .font(.system(size: 27, weight: .bold))
+                .font(.system(size: 31, weight: .bold))
                 .foregroundStyle(Theme.accentGradient)
-                .frame(width: 52, height: 52)
+                .frame(width: 58, height: 58)
                 .contentShape(Circle())
         }
         .buttonStyle(PressableButtonStyle(pressedScale: 0.9))
