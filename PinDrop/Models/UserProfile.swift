@@ -11,6 +11,8 @@ struct UserProfile: Identifiable, Codable, Hashable, Sendable {
     var avatarPath: String?
     var inviteCode: String
     var isSetup: Bool
+    /// How many times other people opened this profile (one per person per day).
+    var viewCount: Int
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -22,6 +24,45 @@ struct UserProfile: Identifiable, Codable, Hashable, Sendable {
         case avatarPath = "avatar_path"
         case inviteCode = "invite_code"
         case isSetup = "is_setup"
+        case viewCount = "view_count"
+    }
+
+    init(
+        id: UUID,
+        username: String,
+        displayName: String,
+        bio: String,
+        statusEmoji: String,
+        avatarColorHex: String,
+        avatarPath: String?,
+        inviteCode: String,
+        isSetup: Bool,
+        viewCount: Int = 0
+    ) {
+        self.id = id
+        self.username = username
+        self.displayName = displayName
+        self.bio = bio
+        self.statusEmoji = statusEmoji
+        self.avatarColorHex = avatarColorHex
+        self.avatarPath = avatarPath
+        self.inviteCode = inviteCode
+        self.isSetup = isSetup
+        self.viewCount = viewCount
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        username = try container.decode(String.self, forKey: .username)
+        displayName = try container.decode(String.self, forKey: .displayName)
+        bio = try container.decodeIfPresent(String.self, forKey: .bio) ?? ""
+        statusEmoji = try container.decodeIfPresent(String.self, forKey: .statusEmoji) ?? ""
+        avatarColorHex = try container.decodeIfPresent(String.self, forKey: .avatarColorHex) ?? AccentStore.defaultHex
+        avatarPath = try container.decodeIfPresent(String.self, forKey: .avatarPath)
+        inviteCode = try container.decodeIfPresent(String.self, forKey: .inviteCode) ?? ""
+        isSetup = try container.decodeIfPresent(Bool.self, forKey: .isSetup) ?? true
+        viewCount = try container.decodeIfPresent(Int.self, forKey: .viewCount) ?? 0
     }
 
     /// `@username`

@@ -88,8 +88,7 @@ struct OnboardingView: View {
     private var topBar: some View {
         HStack {
             HStack(spacing: 8) {
-                Image(systemName: "mappin.and.ellipse")
-                    .foregroundStyle(Theme.accentGradient)
+                AppLogoView(size: 30)
                 Text(verbatim: "PinDrop")
                     .foregroundStyle(Theme.textPrimary)
             }

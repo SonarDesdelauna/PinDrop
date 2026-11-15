@@ -269,13 +269,15 @@ final class SupabaseDataService: Sendable {
             .value
     }
 
-    func addPlace(name: String, emoji: String, at point: GeoPoint) async throws {
+    func addPlace(name: String, emoji: String, at point: GeoPoint, isPublic: Bool, addedFrom: UUID?) async throws {
         struct NewPlace: Encodable, Sendable {
             let name: String
             let emoji: String
             let latitude: Double
             let longitude: Double
             let radius_m: Int
+            let is_public: Bool
+            let added_from: UUID?
         }
         try await client
             .from("places")
@@ -284,17 +286,181 @@ final class SupabaseDataService: Sendable {
                 emoji: emoji,
                 latitude: point.latitude,
                 longitude: point.longitude,
-                radius_m: SavedPlace.defaultRadius
+                radius_m: SavedPlace.defaultRadius,
+                is_public: isPublic,
+                added_from: addedFrom
             ))
             .execute()
     }
 
-    func updatePlace(_ id: UUID, name: String, emoji: String) async throws {
+    func updatePlace(_ id: UUID, name: String, emoji: String, isPublic: Bool) async throws {
+        struct PlaceUpdate: Encodable, Sendable {
+            let name: String
+            let emoji: String
+            let is_public: Bool
+        }
         try await client
             .from("places")
-            .update(["name": String(name.prefix(40)), "emoji": emoji])
+            .update(PlaceUpdate(name: String(name.prefix(40)), emoji: emoji, is_public: isPublic))
             .eq("id", value: id)
             .execute()
+    }
+
+    /// Other people's public places around a point.
+    func fetchPublicPlaces(near point: GeoPoint) async throws -> [PublicPlace] {
+        struct Params: Encodable, Sendable {
+            let lat: Double
+            let lon: Double
+            let radius_km: Double
+        }
+        return try await client
+            .rpc("public_places_near", params: Params(lat: point.latitude, lon: point.longitude, radius_km: 30))
+            .execute()
+            .value
+    }
+
+    /// Public places of one user (shown on their profile).
+    func fetchPublicPlaces(of userID: UUID) async throws -> [PlaceSummary] {
+        try await client
+            .from("places")
+            .select(PlaceSummary.selectColumns)
+            .eq("owner_id", value: userID)
+            .eq("is_public", value: true)
+            .order("created_at", ascending: false)
+            .execute()
+            .value
+    }
+
+    // MARK: - Profiles & social
+
+    func fetchProfile(_ id: UUID) async throws -> UserProfile {
+        try await client
+            .from("profiles")
+            .select()
+            .eq("id", value: id)
+            .single()
+            .execute()
+            .value
+    }
+
+    func fetchProfiles(_ ids: [UUID]) async throws -> [UserProfile] {
+        guard !ids.isEmpty else { return [] }
+        return try await client
+            .from("profiles")
+            .select()
+            .in("id", values: ids)
+            .execute()
+            .value
+    }
+
+    /// Counts a view of someone's profile (max once per day) and returns their total.
+    func recordProfileView(_ target: UUID) async throws -> Int {
+        try await client
+            .rpc("record_profile_view", params: ["target": target])
+            .execute()
+            .value
+    }
+
+    /// Shares the current position with the server (never with other users) to measure time
+    /// spent with friends. Returns how many friends are with you.
+    @discardableResult
+    func heartbeat(at point: GeoPoint) async throws -> Int {
+        struct Params: Encodable, Sendable {
+            let lat: Double
+            let lon: Double
+        }
+        return try await client
+            .rpc("heartbeat", params: Params(lat: point.latitude, lon: point.longitude))
+            .execute()
+            .value
+    }
+
+    func fetchFriendTimes() async throws -> [FriendTime] {
+        try await client
+            .from("friend_time")
+            .select("user_a, user_b, seconds, best_since")
+            .execute()
+            .value
+    }
+
+    // MARK: - Notifications
+
+    func fetchNotifications() async throws -> [AppNotification] {
+        try await client
+            .from("notifications")
+            .select(AppNotification.selectColumns)
+            .order("created_at", ascending: false)
+            .limit(60)
+            .execute()
+            .value
+    }
+
+    func markNotificationsRead() async throws {
+        let uid = try await currentUserID()
+        try await client
+            .from("notifications")
+            .update(["read_at": Self.nowISO])
+            .eq("user_id", value: uid)
+            .is("read_at", value: nil)
+            .execute()
+    }
+
+    func deleteNotification(_ id: UUID) async throws {
+        try await client
+            .from("notifications")
+            .delete()
+            .eq("id", value: id)
+            .execute()
+    }
+
+    // MARK: - Contacts
+
+    func matchContacts(emailHashes: [String], phoneHashes: [String]) async throws -> [ContactMatch] {
+        struct Params: Encodable, Sendable {
+            let email_hashes: [String]
+            let phone_hashes: [String]
+        }
+        return try await client
+            .rpc("match_contacts", params: Params(email_hashes: Array(emailHashes.prefix(3_000)), phone_hashes: Array(phoneHashes.prefix(3_000))))
+            .execute()
+            .value
+    }
+
+    /// Stores the hash of your phone number so friends can find you from their contacts.
+    func setPhoneHash(_ hash: String?) async throws {
+        struct Row: Encodable, Sendable {
+            let user_id: UUID
+            let phone_hash: String?
+            let updated_at: String
+
+            func encode(to encoder: any Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(user_id, forKey: .user_id)
+                if let phone_hash {
+                    try container.encode(phone_hash, forKey: .phone_hash)
+                } else {
+                    try container.encodeNil(forKey: .phone_hash)
+                }
+                try container.encode(updated_at, forKey: .updated_at)
+            }
+
+            enum CodingKeys: String, CodingKey {
+                case user_id
+                case phone_hash
+                case updated_at
+            }
+        }
+        let uid = try await currentUserID()
+        try await client
+            .from("contact_info")
+            .upsert(Row(user_id: uid, phone_hash: hash, updated_at: Self.nowISO), onConflict: "user_id")
+            .execute()
+    }
+
+    func hasPhoneHash() async -> Bool {
+        struct Row: Decodable { let phone_hash: String? }
+        let rows: [Row] = (try? await client.from("contact_info").select("phone_hash").execute().value) ?? []
+        return rows.first?.phone_hash != nil
     }
 
     func deletePlace(_ id: UUID) async throws {

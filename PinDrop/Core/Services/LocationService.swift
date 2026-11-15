@@ -30,6 +30,10 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     private(set) var lastFix: GeoPoint?
     private(set) var lastFixDate: Date?
     private(set) var isLiveUpdating = false
+    /// Current speed in m/s (nil when unknown or standing still), live updates only.
+    private(set) var speed: Double?
+    /// Direction of travel in degrees from north (nil when unknown).
+    private(set) var course: Double?
     /// Called on every fix while live updates are running.
     @ObservationIgnored var liveFixHandler: (@MainActor (GeoPoint) -> Void)?
 
@@ -99,15 +103,22 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     func startLiveUpdates() {
         guard isAuthorized, !isLiveUpdating else { return }
         isLiveUpdating = true
-        manager.distanceFilter = 15
+        manager.distanceFilter = 5
         manager.startUpdatingLocation()
     }
 
     func stopLiveUpdates() {
         guard isLiveUpdating else { return }
         isLiveUpdating = false
+        speed = nil
+        course = nil
         manager.stopUpdatingLocation()
         manager.distanceFilter = kCLDistanceFilterNone
+    }
+
+    private func applyMotion(speed rawSpeed: Double, course rawCourse: Double) {
+        speed = rawSpeed >= 0 ? rawSpeed : nil
+        course = rawCourse >= 0 ? rawCourse : nil
     }
 
     private func resolveLocationRequests(with point: GeoPoint?) {
@@ -221,7 +232,10 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
         let point = GeoPoint(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude)
+        let speed = location.speedAccuracy >= 0 ? location.speed : -1
+        let course = location.courseAccuracy >= 0 ? location.course : -1
         Task { @MainActor [weak self] in
+            self?.applyMotion(speed: speed, course: course)
             self?.resolveLocationRequests(with: point)
         }
     }

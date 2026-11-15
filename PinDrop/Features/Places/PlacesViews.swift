@@ -2,59 +2,172 @@ import SwiftUI
 
 // MARK: - Map annotations (no environment access: Map annotation content does not inherit it)
 
-/// The user's own position on the map, with how long they've been there.
+/// The user's own position on the map: avatar with your live photo around it, the saved
+/// place you are in as a small badge, and how long you've been there (or your speed).
 struct MyLocationAnnotationView: View {
     let user: UserProfile
+    let ownPin: PhotoPin?
+    let ownThumbnail: PinImage?
     let place: SavedPlace?
     let since: Date?
+    let speed: Double?
+    let onOpenPhoto: (PhotoPin) -> Void
 
     @State private var isPulsing = false
+
+    private let avatarSize: CGFloat = 44
+    private var ringSize: CGFloat { avatarSize + 14 }
 
     var body: some View {
         VStack(spacing: 6) {
             ZStack {
                 Circle()
                     .fill(Theme.emerald.opacity(0.25))
-                    .frame(width: 64, height: 64)
+                    .frame(width: 72, height: 72)
                     .scaleEffect(isPulsing ? 1.25 : 0.85)
                     .opacity(isPulsing ? 0 : 0.9)
-                AvatarBadge(user: user, size: 40)
+
+                if let ownPin {
+                    TimelineView(.periodic(from: .now, by: 30)) { context in
+                        ExpiryRing(progress: ownPin.remainingFraction(at: context.date), lineWidth: 3.5, isLive: true)
+                    }
+                    .frame(width: ringSize, height: ringSize)
+                }
+
+                AvatarBadge(user: user, size: avatarSize)
                     .padding(3)
                     .background(Circle().fill(Color.white))
                     .shadow(color: Theme.emerald.opacity(0.6), radius: 10)
             }
-            .frame(width: 64, height: 64)
-
-            if let since {
-                TimelineView(.periodic(from: .now, by: 30)) { context in
-                    let duration = LocaleFormatter.dwell(since: since, now: context.date)
-                    HStack(spacing: 4) {
-                        if let place {
-                            Text(verbatim: place.emoji)
-                            Text("presence.atPlace \(place.name) \(duration)")
-                        } else {
-                            Image(systemName: "clock.fill")
-                                .foregroundStyle(Theme.emerald)
-                            Text("presence.here \(duration)")
-                        }
+            .frame(width: 72, height: 72)
+            .overlay(alignment: .topTrailing) {
+                if let ownPin {
+                    Button {
+                        onOpenPhoto(ownPin)
+                    } label: {
+                        PinThumbnail(pin: ownPin, image: ownThumbnail, size: 32, isLocked: false)
+                            .shadow(color: Color.black.opacity(0.45), radius: 5, x: 0, y: 3)
                     }
-                    .font(Theme.roundedFixed(11, weight: .bold))
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .glassCapsule()
-                    .fixedSize()
+                    .buttonStyle(PressableButtonStyle())
+                    .offset(x: 10, y: -6)
+                    .accessibilityLabel(Text("presence.yourPhoto"))
+                    .transition(.scale.combined(with: .opacity))
                 }
             }
+            .overlay(alignment: .bottomTrailing) {
+                if let place {
+                    Text(verbatim: place.emoji)
+                        .font(.system(size: 15))
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(Theme.surface))
+                        .overlay {
+                            Circle().strokeBorder(Theme.emeraldGradient, lineWidth: 2)
+                        }
+                        .shadow(color: Color.black.opacity(0.4), radius: 4, x: 0, y: 2)
+                        .offset(x: 2, y: 0)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+
+            label
         }
+        .animation(Theme.spring, value: place?.id)
+        .animation(Theme.spring, value: ownPin?.id)
+        .animation(Theme.spring, value: speed == nil)
         .onAppear {
             withAnimation(.easeOut(duration: 1.8).repeatForever(autoreverses: false)) {
                 isPulsing = true
             }
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("presence.you"))
+    }
+
+    @ViewBuilder
+    private var label: some View {
+        if let speed {
+            HStack(spacing: 4) {
+                Image(systemName: "gauge.with.dots.needle.67percent")
+                    .foregroundStyle(Theme.warning)
+                Text(verbatim: LocaleFormatter.speed(metersPerSecond: speed))
+                    .monospacedDigit()
+            }
+            .font(Theme.roundedFixed(11, weight: .heavy))
+            .foregroundStyle(Theme.textPrimary)
+            .lineLimit(1)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .glassCapsule()
+            .fixedSize()
+        } else if let since {
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                let duration = LocaleFormatter.dwell(since: since, now: context.date)
+                HStack(spacing: 4) {
+                    if let place {
+                        Text("presence.atPlace \(place.name) \(duration)")
+                    } else {
+                        Image(systemName: "clock.fill")
+                            .foregroundStyle(Theme.emerald)
+                        Text("presence.here \(duration)")
+                    }
+                }
+                .font(Theme.roundedFixed(11, weight: .bold))
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(1)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .glassCapsule()
+                .fixedSize()
+            }
+        }
+    }
+}
+
+/// Someone else's public place on the map, with the owner's avatar.
+struct PublicPlaceAnnotationView: View {
+    let place: PublicPlace
+
+    private var owner: UserProfile {
+        UserProfile(
+            id: place.ownerID,
+            username: place.ownerUsername,
+            displayName: place.ownerDisplayName,
+            bio: "",
+            statusEmoji: "",
+            avatarColorHex: place.ownerAvatarColor,
+            avatarPath: place.ownerAvatarPath,
+            inviteCode: "",
+            isSetup: true
+        )
+    }
+
+    var body: some View {
+        VStack(spacing: 3) {
+            Text(verbatim: place.emoji)
+                .font(.system(size: 19))
+                .frame(width: 38, height: 38)
+                .background(Circle().fill(Theme.surface.opacity(0.85)))
+                .overlay {
+                    Circle().strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.2, dash: [3, 3]))
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    AvatarBadge(user: owner, size: 18)
+                        .offset(x: 5, y: 3)
+                }
+            Text(verbatim: place.name)
+                .font(Theme.roundedFixed(9, weight: .bold))
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(1)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .glassCapsule()
+                .fixedSize()
+        }
+        .opacity(0.92)
+        .shadow(color: Color.black.opacity(0.35), radius: 6, x: 0, y: 3)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("publicPlace.a11y \(place.name) \(place.ownerDisplayName)"))
+        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -257,10 +370,16 @@ struct PlacesView: View {
                         }
                     }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: place.name)
-                        .font(Theme.text(.subheadline, weight: .semibold))
-                        .foregroundStyle(Theme.textPrimary)
-                        .lineLimit(1)
+                    HStack(spacing: 5) {
+                        Text(verbatim: place.name)
+                            .font(Theme.text(.subheadline, weight: .semibold))
+                            .foregroundStyle(Theme.textPrimary)
+                            .lineLimit(1)
+                        Image(systemName: place.isPublic ? "globe.europe.africa.fill" : "lock.fill")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(place.isPublic ? Theme.emerald : Theme.textSecondary)
+                            .accessibilityLabel(place.isPublic ? Text("places.public") : Text("places.private"))
+                    }
                     Group {
                         if isCurrent {
                             Text("places.youAreHere")
@@ -331,6 +450,7 @@ struct PlaceEditorView: View {
     @State private var name = ""
     @State private var emoji = SavedPlace.emojiPalette[0]
     @State private var source: Source = .myLocation
+    @State private var isPublic = false
     @State private var isSaving = false
     @State private var didLoad = false
     @FocusState private var isNameFocused: Bool
@@ -420,6 +540,8 @@ struct PlaceEditorView: View {
                         .glassCard()
                     }
 
+                    visibilityCard
+
                     if !isEditing {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("places.where")
@@ -487,6 +609,7 @@ struct PlaceEditorView: View {
             if case .edit(let place) = mode {
                 name = place.name
                 emoji = place.emoji
+                isPublic = place.isPublic
             } else {
                 if userLocation == nil, mapCenter != nil {
                     source = .mapCenter
@@ -496,6 +619,30 @@ struct PlaceEditorView: View {
         }
     }
 
+    private var visibilityCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("places.visibility")
+                .font(Theme.text(.subheadline, weight: .semibold))
+                .foregroundStyle(Theme.textSecondary)
+            Picker(selection: $isPublic) {
+                Label("places.private", systemImage: "lock.fill").tag(false)
+                Label("places.public", systemImage: "globe.europe.africa.fill").tag(true)
+            } label: {
+                Text("places.visibility")
+            }
+            .pickerStyle(.segmented)
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: isPublic ? "eye.fill" : "lock.fill")
+                    .foregroundStyle(isPublic ? Theme.warning : Theme.emerald)
+                Text(isPublic ? "places.public.hint" : "places.private.hint")
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .font(Theme.text(.caption))
+        }
+        .animation(Theme.spring, value: isPublic)
+    }
+
     private func save() {
         guard canSave else { return }
         isSaving = true
@@ -503,11 +650,11 @@ struct PlaceEditorView: View {
         Task {
             switch mode {
             case .add:
-                if let targetPoint, await appState.addPlace(name: name, emoji: emoji, at: targetPoint) {
+                if let targetPoint, await appState.addPlace(name: name, emoji: emoji, at: targetPoint, isPublic: isPublic) {
                     dismiss()
                 }
             case .edit(let place):
-                await appState.updatePlace(place, name: name, emoji: emoji)
+                await appState.updatePlace(place, name: name, emoji: emoji, isPublic: isPublic)
                 dismiss()
             }
             isSaving = false

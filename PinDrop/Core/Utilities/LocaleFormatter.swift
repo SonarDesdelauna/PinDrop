@@ -78,6 +78,18 @@ enum LocaleFormatter {
         return Duration.seconds(minutes).formatted(.units(allowed: units, width: .narrow, maximumUnitCount: 2))
     }
 
+    /// Speed in km/h or mph depending on the region, e.g. `23 km/h`.
+    static func speed(metersPerSecond: Double, locale: Locale = .current) -> String {
+        let measurement = Measurement(value: max(0, metersPerSecond), unit: UnitSpeed.metersPerSecond)
+        let converted = measurement.converted(to: usesImperialDistances(locale: locale) ? .milesPerHour : .kilometersPerHour)
+        let formatter = MeasurementFormatter()
+        formatter.locale = locale
+        formatter.unitOptions = .providedUnit
+        formatter.unitStyle = .short
+        formatter.numberFormatter.maximumFractionDigits = 0
+        return formatter.string(from: Measurement(value: converted.value.rounded(), unit: converted.unit))
+    }
+
     /// Walking duration, e.g. `6 min` / `1 hr, 5 min` (localized units).
     static func walkingDuration(seconds: TimeInterval) -> String {
         let roundedSeconds = max(60, (seconds / 60).rounded() * 60)

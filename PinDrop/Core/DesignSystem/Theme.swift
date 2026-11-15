@@ -9,10 +9,14 @@ enum Theme {
     /// Elevated surfaces and cards (#121216), used at `surfaceOpacity` over a material.
     static let surface = Color(hex: 0x121216)
     static let surfaceOpacity: Double = 0.75
-    /// Primary accent (#7C3AED, Electric Violet).
-    static let electricViolet = Color(hex: 0x7C3AED)
-    /// Gradient end of the primary accent (#A855F7, Neon Purple).
-    static let neonPurple = Color(hex: 0xA855F7)
+    /// Primary accent: the user's profile color (default #7C3AED, Electric Violet).
+    static var electricViolet: Color {
+        AccentStore.palette.primary
+    }
+    /// Gradient end of the primary accent: a lighter tint of the profile color.
+    static var neonPurple: Color {
+        AccentStore.palette.secondary
+    }
     /// Secondary accent, success and live state (#10B981, Emerald Pulse).
     static let emerald = Color(hex: 0x10B981)
     static let emeraldLight = Color(hex: 0x34D399)
@@ -89,6 +93,60 @@ enum Theme {
     /// Fixed-size rounded font for very small, layout-constrained badges (map pins, widgets).
     static func roundedFixed(_ size: CGFloat, weight: Font.Weight = .bold) -> Font {
         .system(size: size, weight: weight, design: .rounded)
+    }
+}
+
+/// The app-wide accent color, chosen by the user as their profile color. Stored in the App Group
+/// so the widget uses it too. The UI is rebuilt when it changes (see `RootView`).
+enum AccentStore {
+    static let defaultHex = "#7C3AED"
+    private static let key = "pindrop.accentHex"
+
+    struct Palette {
+        let primary: Color
+        let secondary: Color
+    }
+
+    private static var defaults: UserDefaults? {
+        UserDefaults(suiteName: "group.com.pindrop.app")
+    }
+
+    static var hex: String {
+        defaults?.string(forKey: key) ?? defaultHex
+    }
+
+    static func setHex(_ value: String) {
+        defaults?.set(value, forKey: key)
+    }
+
+    static var palette: Palette {
+        palette(for: hex)
+    }
+
+    static func palette(for hex: String) -> Palette {
+        let rgb = rgbComponents(hex)
+        let primary = Color(.sRGB, red: rgb.0, green: rgb.1, blue: rgb.2, opacity: 1)
+        let mix = 0.32
+        let secondary = Color(
+            .sRGB,
+            red: rgb.0 + (1 - rgb.0) * mix,
+            green: rgb.1 + (1 - rgb.1) * mix,
+            blue: rgb.2 + (1 - rgb.2) * mix,
+            opacity: 1
+        )
+        return Palette(primary: primary, secondary: secondary)
+    }
+
+    private static func rgbComponents(_ hex: String) -> (Double, Double, Double) {
+        let cleaned = hex.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "#", with: "")
+        guard cleaned.count == 6, let value = UInt32(cleaned, radix: 16) else {
+            return (124.0 / 255, 58.0 / 255, 237.0 / 255)
+        }
+        return (
+            Double((value >> 16) & 0xFF) / 255,
+            Double((value >> 8) & 0xFF) / 255,
+            Double(value & 0xFF) / 255
+        )
     }
 }
 

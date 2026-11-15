@@ -92,6 +92,9 @@ struct RootView: View {
             NewPasswordView()
                 .presentationDetents([.medium])
         }
+        // The profile color is the accent of the whole app: rebuild everything when it changes.
+        .tint(Theme.neonPurple)
+        .id(appState.accentHex)
     }
 }
 
@@ -129,11 +132,8 @@ private struct SessionView: View {
 struct SplashView: View {
     var body: some View {
         VStack(spacing: 18) {
-            Image(systemName: "mappin.and.ellipse")
-                .font(.system(size: 46, weight: .bold))
-                .foregroundStyle(Theme.accentGradient)
-                .frame(width: 100, height: 100)
-                .glassCircle()
+            AppLogoView(size: 104)
+                .glow(Theme.electricViolet, radius: 22)
                 .pulsing()
             ProgressView()
                 .tint(Theme.neonPurple)

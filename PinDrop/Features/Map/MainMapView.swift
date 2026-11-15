@@ -4,6 +4,7 @@ import SwiftUI
 /// Dark social map with floating HUD, bottom dock, hub clustering and the Stories viewer overlay.
 struct MainMapView: View {
     @Environment(AppState.self) private var appState
+    @Environment(LocationService.self) private var locationService
     @Environment(\.scenePhase) private var scenePhase
     @Namespace private var heroNamespace
     /// Center of the visible map, used to save a place where the map is pointing.
@@ -12,13 +13,24 @@ struct MainMapView: View {
     @State private var hasCenteredOnUser = false
     /// Above this camera altitude the map switches to the photorealistic 3D globe.
     @State private var isGlobeMode = false
+    @State private var selectedPublicPlace: PublicPlace?
     private static let globeAltitude: Double = 1_200_000
+    /// Your own photo is drawn on your avatar while you are this close to it.
+    private static let ownPinMergeDistance: Double = 150
+    /// Below this speed you are considered still (m/s).
+    private static let movingSpeed: Double = 1.5
 
     var body: some View {
         @Bindable var state = appState
 
         ZStack {
             mapLayer
+
+            if isGlobeMode {
+                OrbitingObjectsView()
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+            }
 
             overlayChrome
 
@@ -71,6 +83,27 @@ struct MainMapView: View {
                 .presentationBackground(.ultraThinMaterial)
                 .presentationCornerRadius(Theme.Radius.sheet)
         }
+        .sheet(isPresented: $state.isNotificationsPresented) {
+            NotificationsView()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.ultraThinMaterial)
+                .presentationCornerRadius(Theme.Radius.sheet)
+        }
+        .sheet(item: $state.presentedProfile) { user in
+            ProfileSheet(user: user)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.ultraThinMaterial)
+                .presentationCornerRadius(Theme.Radius.sheet)
+        }
+        .sheet(item: $selectedPublicPlace) { place in
+            PublicPlaceSheet(place: place)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.ultraThinMaterial)
+                .presentationCornerRadius(Theme.Radius.sheet)
+        }
         .onChange(of: appState.cameraTarget) { _, target in
             guard let target else { return }
             withAnimation(Theme.spring) {
@@ -103,46 +136,103 @@ struct MainMapView: View {
         }
     }
 
+    // MARK: - Derived state
+
+    private var currentSpeed: Double? {
+        guard let speed = locationService.speed, speed >= Self.movingSpeed else { return nil }
+        return speed
+    }
+
+    /// Your active photo, when you are still near it: it is drawn on your avatar.
+    private var mergedOwnPin: PhotoPin? {
+        guard let pin = appState.ownActivePin, let userLocation = appState.userLocation else { return nil }
+        return GeoClustering.haversineDistance(from: pin.location, to: userLocation) <= Self.ownPinMergeDistance ? pin : nil
+    }
+
+    /// Clusters drawn as separate pins (your own single photo is merged into your avatar).
+    private var visibleClusters: [PinCluster] {
+        guard let merged = mergedOwnPin else { return appState.clusters }
+        return appState.clusters.filter { cluster in
+            !(cluster.pins.count == 1 && cluster.leadPin?.id == merged.id)
+        }
+    }
+
+    /// Saved places drawn on the map: the one you are in is shown on your avatar instead.
+    private var visiblePlaces: [SavedPlace] {
+        guard let current = appState.currentPlace else { return appState.places }
+        return appState.places.filter { $0.id != current.id }
+    }
+
+    private func openOwnPin(_ pin: PhotoPin) {
+        HapticManager.shared.pinTap()
+        let cluster = appState.clusters.first { $0.contains(pinID: pin.id) } ?? PinCluster(pins: [pin], center: pin.location)
+        appState.openViewer(for: cluster, startingAt: pin.id)
+    }
+
     // MARK: - Map
 
     private var mapLayer: some View {
-        Map(position: $cameraPosition, interactionModes: .all) {
-            ForEach(appState.places) { place in
+        let skidSegments = SkidMarks.segments(trail: appState.trail, current: currentSpeed == nil ? nil : appState.userLocation)
+        return Map(position: $cameraPosition, interactionModes: .all) {
+            ForEach(skidSegments) { segment in
+                MapPolyline(coordinates: segment.coordinates)
+                    .stroke(
+                        Color(red: 0.06, green: 0.06, blue: 0.07).opacity(segment.opacity),
+                        style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round)
+                    )
+            }
+
+            ForEach(visiblePlaces) { place in
                 Annotation(place.name, coordinate: place.coordinate, anchor: .bottom) {
                     Button {
                         HapticManager.shared.tap()
                         appState.isPlacesPresented = true
                     } label: {
-                        PlaceAnnotationView(place: place, isCurrent: appState.currentPlace?.id == place.id)
+                        PlaceAnnotationView(place: place, isCurrent: false)
                     }
                     .buttonStyle(PressableButtonStyle())
                 }
                 .annotationTitles(.hidden)
             }
 
-            if let userLocation = appState.userLocation {
-                Annotation("", coordinate: userLocation.coordinate, anchor: .center) {
-                    MyLocationAnnotationView(
-                        user: appState.currentUser,
-                        place: appState.currentPlace,
-                        since: appState.presenceSince
-                    )
+            ForEach(appState.visiblePublicPlaces) { place in
+                Annotation(place.name, coordinate: place.coordinate, anchor: .bottom) {
+                    Button {
+                        HapticManager.shared.tap()
+                        selectedPublicPlace = place
+                    } label: {
+                        PublicPlaceAnnotationView(place: place)
+                    }
+                    .buttonStyle(PressableButtonStyle())
                 }
                 .annotationTitles(.hidden)
             }
 
-            ForEach(appState.clusters) { cluster in
+            ForEach(visibleClusters) { cluster in
                 Annotation(appState.placeName(for: cluster) ?? "", coordinate: cluster.coordinate, anchor: .bottom) {
                     annotationView(for: cluster)
                 }
                 .annotationTitles(.hidden)
             }
+
+            if let userLocation = appState.userLocation {
+                let ownPin = mergedOwnPin
+                Annotation("", coordinate: userLocation.coordinate, anchor: .center) {
+                    MyLocationAnnotationView(
+                        user: appState.currentUser,
+                        ownPin: ownPin,
+                        ownThumbnail: ownPin.flatMap { appState.thumbnail(for: $0) },
+                        place: appState.currentPlace,
+                        since: appState.presenceSince,
+                        speed: currentSpeed,
+                        onOpenPhoto: { pin in openOwnPin(pin) }
+                    )
+                }
+                .annotationTitles(.hidden)
+            }
         }
         .mapStyle(mapStyle)
-        .mapControls {
-            MapCompass()
-            MapPitchToggle()
-        }
+        .mapControls {}
         .onMapCameraChange(frequency: .onEnd) { context in
             mapCenter = GeoPoint(context.region.center)
             let shouldShowGlobe = context.camera.distance > Self.globeAltitude
@@ -212,40 +302,85 @@ struct MainMapView: View {
         .padding(.top, 6)
         .padding(.bottom, 8)
         .animation(Theme.spring, value: appState.isUnlocked)
+        .animation(Theme.spring, value: currentSpeed == nil)
     }
 
     private var topHUD: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
                 brandPill
-                Spacer(minLength: 8)
-                profileButton
+                statusPill
+                friendsPill
+                if let speed = currentSpeed {
+                    speedPill(speed)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                }
             }
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) {
-                    statusPill
-                    friendsPill
-                }
-                VStack(alignment: .leading, spacing: 8) {
-                    statusPill
-                    friendsPill
-                }
+            Spacer(minLength: 8)
+            viewsPill
+                .padding(.top, 8)
+            VStack(spacing: 10) {
+                profileButton
+                bellButton
             }
         }
     }
 
     private var brandPill: some View {
         HStack(spacing: 8) {
-            Image(systemName: "mappin.and.ellipse")
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(Theme.accentGradient)
+            AppLogoView(size: 24)
             Text(verbatim: "PinDrop")
                 .font(Theme.rounded(.headline, weight: .heavy))
                 .foregroundStyle(Theme.textPrimary)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.leading, 8)
+        .padding(.trailing, 14)
+        .padding(.vertical, 8)
         .glassCapsule()
+    }
+
+    /// "N profile views", like the counter next to the avatar.
+    private var viewsPill: some View {
+        Button {
+            HapticManager.shared.tap()
+            appState.isFriendsDrawerPresented = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "eye.fill")
+                    .foregroundStyle(Theme.neonPurple)
+                Text("hud.profileViews \(appState.currentUser.viewCount)")
+                    .contentTransition(.numericText())
+            }
+            .font(Theme.rounded(.footnote, weight: .bold))
+            .foregroundStyle(Theme.textPrimary)
+            .lineLimit(1)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 7)
+            .glassCapsule()
+            .fixedSize()
+        }
+        .buttonStyle(PressableButtonStyle())
+        .animation(Theme.spring, value: appState.currentUser.viewCount)
+    }
+
+    private func speedPill(_ speed: Double) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "gauge.with.dots.needle.67percent")
+                .foregroundStyle(Theme.warning)
+            Text(verbatim: LocaleFormatter.speed(metersPerSecond: speed))
+                .contentTransition(.numericText())
+        }
+        .font(Theme.rounded(.subheadline, weight: .heavy))
+        .foregroundStyle(Theme.textPrimary)
+        .monospacedDigit()
+        .lineLimit(1)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .glassCapsule()
+        .fixedSize()
+        .animation(.snappy, value: Int(speed * 3.6))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("hud.speed \(LocaleFormatter.speed(metersPerSecond: speed))"))
     }
 
     @ViewBuilder
@@ -316,6 +451,35 @@ struct MainMapView: View {
         }
         .buttonStyle(PressableButtonStyle())
         .accessibilityLabel(Text("a11y.profile"))
+    }
+
+    private var bellButton: some View {
+        let unread = appState.unreadNotificationCount
+        return Button {
+            HapticManager.shared.tap()
+            appState.isNotificationsPresented = true
+        } label: {
+            Image(systemName: unread > 0 ? "bell.badge.fill" : "bell.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
+                .symbolEffect(.bounce, value: unread)
+                .frame(width: 48, height: 48)
+                .glassCircle()
+                .overlay(alignment: .topTrailing) {
+                    if unread > 0 {
+                        Text(min(unread, 99), format: .number)
+                            .font(Theme.roundedFixed(11, weight: .heavy))
+                            .foregroundStyle(Color.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Theme.accentGradient))
+                            .offset(x: 4, y: -3)
+                    }
+                }
+        }
+        .buttonStyle(PressableButtonStyle())
+        .accessibilityLabel(Text("notifications.title"))
+        .accessibilityValue(Text("notifications.unread \(unread)"))
     }
 
     private var lockedBanner: some View {
@@ -450,7 +614,7 @@ struct MainMapView: View {
 
     private func recenter() {
         HapticManager.shared.selection()
-        let target = appState.ownActivePin?.location ?? appState.userLocation
+        let target = appState.userLocation ?? appState.ownActivePin?.location
         if let target {
             withAnimation(Theme.spring) {
                 cameraPosition = .region(region(around: target, spanMeters: 1_800))

@@ -1,5 +1,6 @@
 import Observation
 import SwiftUI
+import WidgetKit
 
 /// What the Stories-style viewer is currently showing.
 struct ViewerSelection: Identifiable, Equatable {
@@ -39,6 +40,12 @@ struct ToastMessage: Identifiable, Equatable {
     }
 }
 
+/// A recent position used to draw tire marks behind the user while moving.
+struct TrailPoint: Hashable, Sendable {
+    let point: GeoPoint
+    let date: Date
+}
+
 /// Global observable state for the signed-in session: profile, friends, pins, clusters,
 /// downloaded images, unlock state, selection and routing.
 @MainActor
@@ -74,6 +81,18 @@ final class AppState {
     private(set) var places: [SavedPlace] = []
     /// Where the user is right now and since when (device only).
     private(set) var presence: PresenceState?
+    /// Other people's public places around the user.
+    private(set) var publicPlaces: [PublicPlace] = []
+    private(set) var notifications: [AppNotification] = []
+    /// Time spent together, keyed by friend id.
+    private(set) var friendTimes: [UUID: FriendTime] = [:]
+    /// Recent positions while moving (tire marks).
+    private(set) var trail: [TrailPoint] = []
+    /// The app-wide accent color (the user's profile color). Changing it rebuilds the UI.
+    private(set) var accentHex: String = AccentStore.hex
+    var isNotificationsPresented = false
+    /// Profile opened from the friends list, notifications or the map.
+    var presentedProfile: UserProfile?
 
     let dataService: SupabaseDataService
     let locationService: LocationService
@@ -87,6 +106,8 @@ final class AppState {
     @ObservationIgnored private var failedImagePaths: Set<String> = []
     @ObservationIgnored private var pendingFocus: (pinID: UUID, openViewer: Bool)?
     @ObservationIgnored private var lastPresenceUpload: Date?
+    @ObservationIgnored private var lastHeartbeat: Date?
+    @ObservationIgnored private var publicPlacesAnchor: GeoPoint?
     @ObservationIgnored private var lastPresencePlaceIDs: Set<UUID> = []
 
     init(dataService: SupabaseDataService, locationService: LocationService) {
@@ -175,6 +196,146 @@ final class AppState {
         return LocaleFormatter.distance(meters: GeoClustering.haversineDistance(from: userLocation, to: point))
     }
 
+    // MARK: - Social
+
+    var unreadNotificationCount: Int {
+        notifications.reduce(0) { $0 + ($1.isUnread ? 1 : 0) }
+    }
+
+    func friendTime(with friendID: UUID) -> FriendTime? {
+        friendTimes[friendID]
+    }
+
+    func isBestFriend(_ friendID: UUID) -> Bool {
+        friendTimes[friendID]?.isBestFriend ?? false
+    }
+
+    /// Public places worth drawing: hide the ones that are already in your own places.
+    var visiblePublicPlaces: [PublicPlace] {
+        let mine = places.map(\.location)
+        return publicPlaces.filter { place in
+            !mine.contains { GeoClustering.haversineDistance(from: $0, to: place.location) < 30 }
+        }
+    }
+
+    private func applyAccent(_ hex: String) {
+        guard hex.uppercased() != accentHex.uppercased() else { return }
+        AccentStore.setHex(hex)
+        accentHex = hex
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    func openProfile(_ user: UserProfile) {
+        presentedProfile = user
+    }
+
+    func loadProfileDetails(for user: UserProfile) async -> (profile: UserProfile, places: [PlaceSummary]) {
+        let viewCount = (try? await dataService.recordProfileView(user.id)) ?? user.viewCount
+        var profile = (try? await dataService.fetchProfile(user.id)) ?? user
+        profile.viewCount = max(profile.viewCount, viewCount)
+        let places = (try? await dataService.fetchPublicPlaces(of: user.id)) ?? []
+        return (profile, places)
+    }
+
+    func reloadNotifications() async {
+        guard sessionPhase == .ready, let fetched = try? await dataService.fetchNotifications() else { return }
+        withAnimation(Theme.spring) {
+            notifications = fetched
+        }
+    }
+
+    func markNotificationsRead() async {
+        guard unreadNotificationCount > 0 else { return }
+        try? await dataService.markNotificationsRead()
+        let now = Date.now
+        notifications = notifications.map { item in
+            guard item.isUnread else { return item }
+            return AppNotification(
+                id: item.id,
+                kind: item.kind,
+                createdAt: item.createdAt,
+                readAt: now,
+                payload: item.payload,
+                actor: item.actor,
+                place: item.place
+            )
+        }
+    }
+
+    func deleteNotification(_ notification: AppNotification) async {
+        withAnimation(Theme.spring) {
+            notifications.removeAll { $0.id == notification.id }
+        }
+        try? await dataService.deleteNotification(notification.id)
+    }
+
+    /// Accepts the friend request behind a notification.
+    func acceptFriendRequest(from user: UserProfile) async {
+        if let request = friendsSnapshot.incoming.first(where: { $0.requesterID == user.id }) {
+            await respond(to: request, accept: true)
+        } else if let result = await sendFriendRequest(to: user.username), result.isSuccess {
+            showToast(.success, title: String(localized: "toast.friendAdded.title \(user.firstName)"))
+        }
+        await reloadNotifications()
+    }
+
+    /// Copies someone's public place into your own places.
+    func addPlace(from summary: PlaceSummary) async -> Bool {
+        await addPlace(name: summary.name, emoji: summary.emoji, at: summary.location, isPublic: false, addedFrom: summary.id)
+    }
+
+    func addPlace(from place: PublicPlace) async -> Bool {
+        await addPlace(name: place.name, emoji: place.emoji, at: place.location, isPublic: false, addedFrom: place.id)
+    }
+
+    private func reloadFriendTimes() async {
+        guard let rows = try? await dataService.fetchFriendTimes() else { return }
+        var map: [UUID: FriendTime] = [:]
+        for row in rows {
+            map[row.other(than: currentUser.id)] = row
+        }
+        friendTimes = map
+    }
+
+    private func reloadPublicPlaces(force: Bool = false) async {
+        guard let userLocation else { return }
+        if !force, let anchor = publicPlacesAnchor, GeoClustering.haversineDistance(from: anchor, to: userLocation) < 1_000 {
+            return
+        }
+        guard let fetched = try? await dataService.fetchPublicPlaces(near: userLocation) else { return }
+        publicPlacesAnchor = userLocation
+        withAnimation(Theme.spring) {
+            publicPlaces = fetched
+        }
+    }
+
+    /// Time-together heartbeat (at most once a minute) while the app is open.
+    private func sendHeartbeatIfNeeded() async {
+        guard let userLocation, locationService.isAuthorized else { return }
+        if let lastHeartbeat, Date.now.timeIntervalSince(lastHeartbeat) < 55 { return }
+        lastHeartbeat = .now
+        _ = try? await dataService.heartbeat(at: userLocation)
+    }
+
+    private func updateTrail(with point: GeoPoint) {
+        let now = Date.now
+        let isMoving = (locationService.speed ?? 0) >= 1.5
+        var updated = trail.filter { now.timeIntervalSince($0.date) < 90 && GeoClustering.haversineDistance(from: $0.point, to: point) < 350 }
+        if isMoving {
+            if let last = updated.last, GeoClustering.haversineDistance(from: last.point, to: point) < 4 {
+                // Too close to the previous mark.
+            } else {
+                updated.append(TrailPoint(point: point, date: now))
+            }
+        }
+        if updated.count > 60 {
+            updated.removeFirst(updated.count - 60)
+        }
+        if updated != trail {
+            trail = updated
+        }
+    }
+
     // MARK: - Presence & places
 
     /// The saved place the user is currently in, if any.
@@ -239,7 +400,11 @@ final class AppState {
     private func handleFix(_ point: GeoPoint) {
         userLocation = point
         updatePresence(with: point)
+        updateTrail(with: point)
         uploadPresenceIfNeeded(point)
+        Task { [weak self] in
+            await self?.reloadPublicPlaces()
+        }
     }
 
     private func updatePresence(with point: GeoPoint) {
@@ -271,6 +436,7 @@ final class AppState {
             guard let self else { return }
             if (try? await self.dataService.recordPresence(at: point)) != nil {
                 await self.reloadPlaces()
+                await self.reloadNotifications()
             }
         }
     }
@@ -282,11 +448,11 @@ final class AppState {
         }
     }
 
-    func addPlace(name: String, emoji: String, at point: GeoPoint) async -> Bool {
+    func addPlace(name: String, emoji: String, at point: GeoPoint, isPublic: Bool, addedFrom: UUID? = nil) async -> Bool {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         do {
-            try await dataService.addPlace(name: trimmed, emoji: emoji, at: point)
+            try await dataService.addPlace(name: trimmed, emoji: emoji, at: point, isPublic: isPublic, addedFrom: addedFrom)
             HapticManager.shared.success()
             lastPresencePlaceIDs = []
             if let userLocation, GeoClustering.haversineDistance(from: userLocation, to: point) <= Double(SavedPlace.defaultRadius) {
@@ -301,11 +467,11 @@ final class AppState {
         }
     }
 
-    func updatePlace(_ place: SavedPlace, name: String, emoji: String) async {
+    func updatePlace(_ place: SavedPlace, name: String, emoji: String, isPublic: Bool) async {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         do {
-            try await dataService.updatePlace(place.id, name: trimmed, emoji: emoji)
+            try await dataService.updatePlace(place.id, name: trimmed, emoji: emoji, isPublic: isPublic)
             HapticManager.shared.success()
             await reloadPlaces()
         } catch {
@@ -391,6 +557,7 @@ final class AppState {
         HapticManager.shared.prepare()
         do {
             currentUser = try await dataService.currentProfile()
+            applyAccent(currentUser.avatarColorHex)
             sessionPhase = .ready
             loadPresence()
         } catch {
@@ -416,6 +583,15 @@ final class AppState {
         lastPresencePlaceIDs = []
         isPlacesPresented = false
         isAddPlacePresented = false
+        isNotificationsPresented = false
+        presentedProfile = nil
+        publicPlaces = []
+        notifications = []
+        friendTimes = [:]
+        trail = []
+        lastHeartbeat = nil
+        publicPlacesAnchor = nil
+        applyAccent(AccentStore.defaultHex)
         housekeepingTask?.cancel()
         housekeepingTask = nil
         sessionUserID = nil
@@ -461,12 +637,18 @@ final class AppState {
         if let userLocation {
             uploadPresenceIfNeeded(userLocation)
         }
+        async let notificationsLoad: Void = reloadNotifications()
+        async let friendTimesLoad: Void = reloadFriendTimes()
+        async let publicPlacesLoad: Void = reloadPublicPlaces(force: true)
+        async let heartbeatLoad: Void = sendHeartbeatIfNeeded()
+        _ = await (notificationsLoad, friendTimesLoad, publicPlacesLoad, heartbeatLoad)
         do {
             async let profile = dataService.currentProfile()
             async let friends = dataService.fetchFriends()
             async let livePins = dataService.fetchActivePins()
             let (fetchedProfile, fetchedFriends, fetchedPins) = try await (profile, friends, livePins)
             let now = Date.now
+            applyAccent(fetchedProfile.avatarColorHex)
             withAnimation(Theme.spring) {
                 currentUser = fetchedProfile
                 friendsSnapshot = fetchedFriends
@@ -519,6 +701,7 @@ final class AppState {
                 try? await Task.sleep(for: .seconds(30))
                 guard let self, !Task.isCancelled else { return }
                 self.pruneExpiredPins()
+                await self.sendHeartbeatIfNeeded()
                 tick += 1
                 if tick.isMultiple(of: 2) {
                     await self.refresh()
@@ -623,6 +806,7 @@ final class AppState {
         }
         profile.isSetup = true
         let saved = try await dataService.updateProfile(ProfileUpdate(profile: profile))
+        applyAccent(saved.avatarColorHex)
         if let previousPath, previousPath != saved.avatarPath {
             Task { await dataService.deleteAvatar(path: previousPath) }
         }
@@ -724,6 +908,18 @@ final class AppState {
 
     func focusMap(on point: GeoPoint, spanMeters: Double = 1_500) {
         cameraTarget = CameraTarget(point: point, spanMeters: spanMeters)
+    }
+
+    /// Closes every sheet and centers the map on a point.
+    func showOnMap(_ point: GeoPoint) {
+        presentedProfile = nil
+        isNotificationsPresented = false
+        isFriendsDrawerPresented = false
+        isPlacesPresented = false
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(350))
+            self?.focusMap(on: point, spanMeters: 700)
+        }
     }
 
     /// Centers the map on a pin and optionally opens it, waiting for data if needed.

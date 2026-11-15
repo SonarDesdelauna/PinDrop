@@ -12,6 +12,7 @@ struct SavedPlace: Identifiable, Decodable, Hashable, Sendable {
     let latitude: Double
     let longitude: Double
     let radiusM: Int
+    let isPublic: Bool
     let createdAt: Date
     let visitCount: Int
     let lastVisitAt: Date?
@@ -25,6 +26,7 @@ struct SavedPlace: Identifiable, Decodable, Hashable, Sendable {
         case latitude
         case longitude
         case radiusM = "radius_m"
+        case isPublic = "is_public"
         case createdAt = "created_at"
         case visitCount = "visit_count"
         case lastVisitAt = "last_visit_at"

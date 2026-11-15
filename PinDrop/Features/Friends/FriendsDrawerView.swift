@@ -13,16 +13,19 @@ struct FriendsDrawerView: View {
     @State private var requestResult: FriendRequestResult?
     @State private var friendPendingRemoval: UserProfile?
     @State private var isConfirmingSignOut = false
+    @State private var isContactsPresented = false
+    @State private var profilePath: [UserProfile] = []
     @FocusState private var isQueryFocused: Bool
 
     var body: some View {
         @Bindable var state = appState
 
-        NavigationStack {
+        NavigationStack(path: $profilePath) {
             ScrollView {
                 VStack(spacing: 18) {
                     profileCard
                     addFriendCard
+                    contactsCard
                     if !appState.friendsSnapshot.incoming.isEmpty {
                         incomingSection
                     }
@@ -46,6 +49,12 @@ struct FriendsDrawerView: View {
             }
             .navigationTitle(Text("friends.title"))
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: UserProfile.self) { user in
+                ProfileView(user: user)
+            }
+            .navigationDestination(isPresented: $isContactsPresented) {
+                ContactsView()
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -117,9 +126,19 @@ struct FriendsDrawerView: View {
                             .font(.system(size: 18))
                     }
                 }
-                Text(verbatim: appState.currentUser.handle)
-                    .font(Theme.rounded(.subheadline, weight: .medium))
-                    .foregroundStyle(Theme.textSecondary)
+                HStack(spacing: 8) {
+                    Text(verbatim: appState.currentUser.handle)
+                        .font(Theme.rounded(.subheadline, weight: .medium))
+                        .foregroundStyle(Theme.textSecondary)
+                    Label {
+                        Text("hud.profileViews \(appState.currentUser.viewCount)")
+                    } icon: {
+                        Image(systemName: "eye.fill")
+                    }
+                    .font(Theme.rounded(.caption, weight: .bold))
+                    .foregroundStyle(Theme.neonPurple)
+                    .lineLimit(1)
+                }
                 if !appState.currentUser.bio.isEmpty {
                     Text(verbatim: appState.currentUser.bio)
                         .font(Theme.text(.footnote))
@@ -159,6 +178,40 @@ struct FriendsDrawerView: View {
         }
         .padding(16)
         .glassCard()
+    }
+
+    // MARK: - Contacts
+
+    private var contactsCard: some View {
+        Button {
+            HapticManager.shared.tap()
+            isContactsPresented = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "person.crop.circle.badge.plus")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Color.white)
+                    .frame(width: 42, height: 42)
+                    .background(Circle().fill(Theme.accentGradient))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("contacts.find.title")
+                        .font(Theme.text(.subheadline, weight: .bold))
+                        .foregroundStyle(Theme.textPrimary)
+                    Text("contacts.find.subtitle")
+                        .font(Theme.text(.caption))
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .multilineTextAlignment(.leading)
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .padding(14)
+            .glassCard()
+        }
+        .buttonStyle(PressableButtonStyle(pressedScale: 0.98))
     }
 
     // MARK: - Add friend
@@ -429,11 +482,16 @@ struct FriendsDrawerView: View {
 
     private func friendRow(_ friend: UserProfile) -> some View {
         let activePin = appState.activePin(for: friend)
+        let time = appState.friendTime(with: friend.id)
         return Button {
-            guard let activePin else { return }
-            HapticManager.shared.pinTap()
-            dismiss()
-            appState.requestFocus(on: activePin.id, openViewer: true)
+            if let activePin {
+                HapticManager.shared.pinTap()
+                dismiss()
+                appState.requestFocus(on: activePin.id, openViewer: true)
+            } else {
+                HapticManager.shared.tap()
+                profilePath.append(friend)
+            }
         } label: {
             HStack(spacing: 12) {
                 AvatarBadge(user: friend, size: 42)
@@ -445,7 +503,23 @@ struct FriendsDrawerView: View {
                                 .overlay(Circle().strokeBorder(Theme.obsidian, lineWidth: 2))
                         }
                     }
-                profileLabels(friend)
+                    .overlay(alignment: .topLeading) {
+                        if time?.isBestFriend == true {
+                            Text(verbatim: "💜")
+                                .font(.system(size: 13))
+                                .offset(x: -4, y: -4)
+                                .accessibilityLabel(Text("bestFriend.badge"))
+                        }
+                    }
+                VStack(alignment: .leading, spacing: 2) {
+                    profileLabels(friend)
+                    if let time, time.seconds >= 60 {
+                        Text("bestFriend.together \(BestFriendProgressView.duration(time.seconds))")
+                            .font(Theme.text(.caption2, weight: .semibold))
+                            .foregroundStyle(time.isBestFriend ? Theme.neonPurple : Theme.textSecondary)
+                            .lineLimit(1)
+                    }
+                }
                 Spacer(minLength: 8)
                 if let activePin {
                     VStack(alignment: .trailing, spacing: 2) {
@@ -474,6 +548,11 @@ struct FriendsDrawerView: View {
         }
         .buttonStyle(PressableButtonStyle(pressedScale: 0.98))
         .contextMenu {
+            Button {
+                profilePath.append(friend)
+            } label: {
+                Label("profile.view", systemImage: "person.crop.circle")
+            }
             Button(role: .destructive) {
                 friendPendingRemoval = friend
             } label: {

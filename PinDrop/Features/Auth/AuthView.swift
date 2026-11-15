@@ -76,11 +76,7 @@ struct AuthView: View {
         ScrollView {
             VStack(spacing: 22) {
                 VStack(spacing: 12) {
-                    Image(systemName: "mappin.and.ellipse")
-                        .font(.system(size: 44, weight: .bold))
-                        .foregroundStyle(Theme.accentGradient)
-                        .frame(width: 92, height: 92)
-                        .glassCircle()
+                    AppLogoView(size: 92)
                         .glow(Theme.neonPurple, radius: 24)
                     Text(mode == .signIn ? "auth.signIn.title" : "auth.signUp.title")
                         .font(Theme.text(.largeTitle, weight: .heavy))
