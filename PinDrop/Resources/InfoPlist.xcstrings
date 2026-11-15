@@ -1,0 +1,150 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "CFBundleDisplayName" : {
+      "comment" : "Info.plist: CFBundleDisplayName",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop"
+          }
+        }
+      }
+    },
+    "CFBundleName" : {
+      "comment" : "Info.plist: CFBundleName",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop"
+          }
+        }
+      }
+    },
+    "NSCameraUsageDescription" : {
+      "comment" : "Info.plist: NSCameraUsageDescription",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop uses the camera to capture live moments you choose to drop on the map. Photos from your library are never used."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop usa la fotocamera per scattare i momenti live che scegli di pubblicare sulla mappa. Le foto della tua libreria non vengono mai usate."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop usa la cámara para capturar los momentos en vivo que eliges publicar en el mapa. Nunca se usan las fotos de tu fototeca."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop utilise l'appareil photo pour capturer les moments en direct que tu choisis de publier sur la carte. Les photos de ta photothèque ne sont jamais utilisées."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop verwendet die Kamera, um Live-Momente aufzunehmen, die du auf der Karte teilen möchtest. Fotos aus deiner Mediathek werden nie verwendet."
+          }
+        }
+      }
+    },
+    "NSLocationWhenInUseUsageDescription" : {
+      "comment" : "Info.plist: NSLocationWhenInUseUsageDescription",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop reads your location only at the moment you take a photo, to pin it on your friends' map. There is no background tracking."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop legge la tua posizione solo nell'istante in cui scatti una foto, per fissarla sulla mappa dei tuoi amici. Nessun tracciamento in background."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop solo lee tu ubicación en el momento en que tomas una foto, para fijarla en el mapa de tus amigos. No hay rastreo en segundo plano."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop lit ta position uniquement au moment où tu prends une photo, pour l'épingler sur la carte de tes amis. Aucun suivi en arrière-plan."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop liest deinen Standort nur in dem Moment, in dem du ein Foto machst, um es auf der Karte deiner Freunde zu pinnen. Es gibt kein Tracking im Hintergrund."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

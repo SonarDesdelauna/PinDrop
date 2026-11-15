@@ -1,0 +1,17 @@
+# Xcode / XcodeGen output
+*.xcodeproj/
+*.xcworkspace/
+DerivedData/
+build/
+xcuserdata/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# SwiftPM
+.swiftpm/
+.build/
+
+# OS
+.DS_Store
+Thumbs.db
