@@ -305,42 +305,61 @@ struct MainMapView: View {
         .animation(Theme.spring, value: currentSpeed == nil)
     }
 
+    /// Top bar that always fits the screen width: the brand and the views counter shrink
+    /// on narrow phones instead of pushing the whole interface off screen.
     private var topHUD: some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 8) {
-                brandPill
-                statusPill
-                friendsPill
-                if let speed = currentSpeed {
-                    speedPill(speed)
-                        .transition(.move(edge: .leading).combined(with: .opacity))
+        VStack(spacing: 10) {
+            ViewThatFits(in: .horizontal) {
+                topRow(showsBrandName: true, compactViews: false)
+                topRow(showsBrandName: false, compactViews: false)
+                topRow(showsBrandName: false, compactViews: true)
+            }
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
+                    statusPill
+                    friendsPill
+                    if let speed = currentSpeed {
+                        speedPill(speed)
+                            .transition(.move(edge: .leading).combined(with: .opacity))
+                    }
                 }
-            }
-            Spacer(minLength: 8)
-            viewsPill
-                .padding(.top, 8)
-            VStack(spacing: 10) {
-                profileButton
+                Spacer(minLength: 0)
                 bellButton
+                    .padding(.trailing, 1)
             }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func topRow(showsBrandName: Bool, compactViews: Bool) -> some View {
+        HStack(spacing: 8) {
+            brandPill(showsName: showsBrandName)
+            Spacer(minLength: 4)
+            viewsPill(compact: compactViews)
+            profileButton
         }
     }
 
-    private var brandPill: some View {
+    private func brandPill(showsName: Bool) -> some View {
         HStack(spacing: 8) {
             AppLogoView(size: 24)
-            Text(verbatim: "PinDrop")
-                .font(Theme.rounded(.headline, weight: .heavy))
-                .foregroundStyle(Theme.textPrimary)
+            if showsName {
+                Text(verbatim: "PinDrop")
+                    .font(Theme.rounded(.headline, weight: .heavy))
+                    .foregroundStyle(Theme.textPrimary)
+                    .fixedSize()
+            }
         }
         .padding(.leading, 8)
-        .padding(.trailing, 14)
+        .padding(.trailing, showsName ? 14 : 8)
         .padding(.vertical, 8)
         .glassCapsule()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: "PinDrop"))
     }
 
     /// "N profile views", like the counter next to the avatar.
-    private var viewsPill: some View {
+    private func viewsPill(compact: Bool) -> some View {
         Button {
             HapticManager.shared.tap()
             appState.isFriendsDrawerPresented = true
@@ -348,8 +367,13 @@ struct MainMapView: View {
             HStack(spacing: 6) {
                 Image(systemName: "eye.fill")
                     .foregroundStyle(Theme.neonPurple)
-                Text("hud.profileViews \(appState.currentUser.viewCount)")
-                    .contentTransition(.numericText())
+                if compact {
+                    Text(appState.currentUser.viewCount, format: .number)
+                        .contentTransition(.numericText())
+                } else {
+                    Text("hud.profileViews \(appState.currentUser.viewCount)")
+                        .contentTransition(.numericText())
+                }
             }
             .font(Theme.rounded(.footnote, weight: .bold))
             .foregroundStyle(Theme.textPrimary)
@@ -361,6 +385,7 @@ struct MainMapView: View {
         }
         .buttonStyle(PressableButtonStyle())
         .animation(Theme.spring, value: appState.currentUser.viewCount)
+        .accessibilityLabel(Text("hud.profileViews \(appState.currentUser.viewCount)"))
     }
 
     private func speedPill(_ speed: Double) -> some View {
