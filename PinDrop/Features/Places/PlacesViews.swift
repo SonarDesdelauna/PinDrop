@@ -7,6 +7,8 @@ import SwiftUI
 struct MyLocationAnnotationView: View {
     let user: UserProfile
     let ownPin: PhotoPin?
+    /// Other live photos of yours taken here (shown as `+N`).
+    let extraPhotoCount: Int
     let ownThumbnail: PinImage?
     let place: SavedPlace?
     let since: Date?
@@ -47,6 +49,17 @@ struct MyLocationAnnotationView: View {
                     } label: {
                         PinThumbnail(pin: ownPin, image: ownThumbnail, size: 32, isLocked: false)
                             .shadow(color: Color.black.opacity(0.45), radius: 5, x: 0, y: 3)
+                            .overlay(alignment: .topTrailing) {
+                                if extraPhotoCount > 0 {
+                                    Text(verbatim: "+\(extraPhotoCount)")
+                                        .font(Theme.roundedFixed(9, weight: .heavy))
+                                        .foregroundStyle(Color.white)
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 1)
+                                        .background(Capsule().fill(Theme.accentGradient))
+                                        .offset(x: 6, y: -4)
+                                }
+                            }
                     }
                     .buttonStyle(PressableButtonStyle())
                     .offset(x: 10, y: -6)

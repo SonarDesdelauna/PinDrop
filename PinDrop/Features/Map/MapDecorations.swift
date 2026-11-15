@@ -159,10 +159,11 @@ struct AppLogoView: View {
             .resizable()
             .interpolation(.high)
             .scaledToFit()
+            .scaleEffect(1.08)
             .frame(width: size, height: size)
-            .clipShape(RoundedRectangle(cornerRadius: size * 0.225, style: .continuous))
+            .clipShape(Circle())
             .overlay {
-                RoundedRectangle(cornerRadius: size * 0.225, style: .continuous)
+                Circle()
                     .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
             }
             .accessibilityHidden(true)

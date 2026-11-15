@@ -14,6 +14,10 @@ struct MainMapView: View {
     /// Above this camera altitude the map switches to the photorealistic 3D globe.
     @State private var isGlobeMode = false
     @State private var selectedPublicPlace: PublicPlace?
+    /// Map scale and rotation, used to keep other annotations from covering your avatar.
+    @State private var metersPerPoint: Double = 0
+    @State private var mapHeading: Double = 0
+    @State private var mapHeight: CGFloat = 0
     private static let globeAltitude: Double = 1_200_000
     /// Your own photo is drawn on your avatar while you are this close to it.
     private static let ownPinMergeDistance: Double = 150
@@ -143,18 +147,64 @@ struct MainMapView: View {
         return speed
     }
 
-    /// Your active photo, when you are still near it: it is drawn on your avatar.
-    private var mergedOwnPin: PhotoPin? {
-        guard let pin = appState.ownActivePin, let userLocation = appState.userLocation else { return nil }
-        return GeoClustering.haversineDistance(from: pin.location, to: userLocation) <= Self.ownPinMergeDistance ? pin : nil
+    /// Your active photos near you, newest first: they are drawn on your avatar.
+    private var mergedOwnPins: [PhotoPin] {
+        guard let userLocation = appState.userLocation else { return [] }
+        return appState.activePins
+            .filter { appState.isOwn($0) && GeoClustering.haversineDistance(from: $0.location, to: userLocation) <= Self.ownPinMergeDistance }
+            .sorted { $0.expiresAt > $1.expiresAt }
     }
 
-    /// Clusters drawn as separate pins (your own single photo is merged into your avatar).
+    /// Clusters drawn as separate pins, without your photos that are merged into your avatar.
     private var visibleClusters: [PinCluster] {
-        guard let merged = mergedOwnPin else { return appState.clusters }
-        return appState.clusters.filter { cluster in
-            !(cluster.pins.count == 1 && cluster.leadPin?.id == merged.id)
+        let mergedIDs = Set(mergedOwnPins.map(\.id))
+        guard !mergedIDs.isEmpty else { return appState.clusters }
+        return appState.clusters.compactMap { cluster in
+            guard cluster.pins.contains(where: { mergedIDs.contains($0.id) }) else { return cluster }
+            let remaining = cluster.pins.filter { !mergedIDs.contains($0.id) }
+            guard !remaining.isEmpty else { return nil }
+            return PinCluster(pins: remaining, center: cluster.center, placeName: cluster.placeName)
         }
+    }
+
+    /// Where to draw a bottom-anchored annotation so it never covers your avatar: anything
+    /// that would overlap it on screen is pushed just outside, away from you.
+    private func displayCoordinate(for point: GeoPoint) -> CLLocationCoordinate2D {
+        guard let user = appState.userLocation, metersPerPoint > 0 else { return point.coordinate }
+        let clearance: Double = 108
+        let clearanceX: Double = 150
+        let lift: Double = 52
+        let userCenterY: Double = 12
+        let metersPerDegreeLatitude = 111_320.0
+        let metersPerDegreeLongitude = max(1, metersPerDegreeLatitude * cos(user.latitude * Double.pi / 180))
+        let east = (point.longitude - user.longitude) * metersPerDegreeLongitude
+        let north = (point.latitude - user.latitude) * metersPerDegreeLatitude
+        guard (east * east + north * north).squareRoot() < (clearanceX + lift) * 1.5 * metersPerPoint else {
+            return point.coordinate
+        }
+        let heading = mapHeading * Double.pi / 180
+        let screenX = (east * cos(heading) - north * sin(heading)) / metersPerPoint
+        let screenY = -(east * sin(heading) + north * cos(heading)) / metersPerPoint
+        // Keep-out ellipse around the avatar + its label (labels are wider than tall).
+        let radiusX = clearanceX
+        let radiusY = clearance
+        let deltaX = screenX
+        let deltaY = screenY - lift - userCenterY
+        let normalized = ((deltaX / radiusX) * (deltaX / radiusX) + (deltaY / radiusY) * (deltaY / radiusY)).squareRoot()
+        guard normalized < 1 else { return point.coordinate }
+        let newX: Double
+        let newY: Double
+        if normalized < 0.01 {
+            newX = 0
+            newY = -radiusY + lift + userCenterY
+        } else {
+            newX = deltaX / normalized
+            newY = deltaY / normalized + lift + userCenterY
+        }
+        let up = -newY
+        let newEast = (newX * cos(heading) + up * sin(heading)) * metersPerPoint
+        let newNorth = (-newX * sin(heading) + up * cos(heading)) * metersPerPoint
+        return user.offsetBy(northMeters: newNorth, eastMeters: newEast).coordinate
     }
 
     /// Saved places drawn on the map: the one you are in is shown on your avatar instead.
@@ -163,10 +213,10 @@ struct MainMapView: View {
         return appState.places.filter { $0.id != current.id }
     }
 
-    private func openOwnPin(_ pin: PhotoPin) {
+    private func openOwnPins(_ pins: [PhotoPin]) {
+        guard let first = pins.first else { return }
         HapticManager.shared.pinTap()
-        let cluster = appState.clusters.first { $0.contains(pinID: pin.id) } ?? PinCluster(pins: [pin], center: pin.location)
-        appState.openViewer(for: cluster, startingAt: pin.id)
+        appState.openViewer(for: PinCluster(pins: pins, center: first.location), startingAt: first.id)
     }
 
     // MARK: - Map
@@ -183,7 +233,7 @@ struct MainMapView: View {
             }
 
             ForEach(visiblePlaces) { place in
-                Annotation(place.name, coordinate: place.coordinate, anchor: .bottom) {
+                Annotation(place.name, coordinate: displayCoordinate(for: place.location), anchor: .bottom) {
                     Button {
                         HapticManager.shared.tap()
                         appState.isPlacesPresented = true
@@ -196,7 +246,7 @@ struct MainMapView: View {
             }
 
             ForEach(appState.visiblePublicPlaces) { place in
-                Annotation(place.name, coordinate: place.coordinate, anchor: .bottom) {
+                Annotation(place.name, coordinate: displayCoordinate(for: place.location), anchor: .bottom) {
                     Button {
                         HapticManager.shared.tap()
                         selectedPublicPlace = place
@@ -209,23 +259,25 @@ struct MainMapView: View {
             }
 
             ForEach(visibleClusters) { cluster in
-                Annotation(appState.placeName(for: cluster) ?? "", coordinate: cluster.coordinate, anchor: .bottom) {
+                Annotation(appState.placeName(for: cluster) ?? "", coordinate: displayCoordinate(for: cluster.center), anchor: .bottom) {
                     annotationView(for: cluster)
                 }
                 .annotationTitles(.hidden)
             }
 
             if let userLocation = appState.userLocation {
-                let ownPin = mergedOwnPin
+                let ownPins = mergedOwnPins
+                let ownPin = ownPins.first
                 Annotation("", coordinate: userLocation.coordinate, anchor: .center) {
                     MyLocationAnnotationView(
                         user: appState.currentUser,
                         ownPin: ownPin,
+                        extraPhotoCount: max(0, ownPins.count - 1),
                         ownThumbnail: ownPin.flatMap { appState.thumbnail(for: $0) },
                         place: appState.currentPlace,
                         since: appState.presenceSince,
                         speed: currentSpeed,
-                        onOpenPhoto: { pin in openOwnPin(pin) }
+                        onOpenPhoto: { _ in openOwnPins(ownPins) }
                     )
                 }
                 .annotationTitles(.hidden)
@@ -235,6 +287,10 @@ struct MainMapView: View {
         .mapControls {}
         .onMapCameraChange(frequency: .onEnd) { context in
             mapCenter = GeoPoint(context.region.center)
+            mapHeading = context.camera.heading
+            if mapHeight > 0 {
+                metersPerPoint = context.region.span.latitudeDelta * 111_320 / Double(mapHeight)
+            }
             let shouldShowGlobe = context.camera.distance > Self.globeAltitude
             if shouldShowGlobe != isGlobeMode {
                 withAnimation(.easeInOut(duration: 0.45)) {
@@ -243,6 +299,11 @@ struct MainMapView: View {
             }
         }
         .ignoresSafeArea()
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { height in
+            mapHeight = height
+        }
     }
 
     @ViewBuilder
