@@ -167,7 +167,7 @@ struct GlassButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(Theme.rounded(.subheadline, weight: .semibold))
-            .foregroundStyle(Theme.textPrimary)
+            .foregroundStyle(Theme.neonPurple)
             .multilineTextAlignment(.center)
             .padding(.vertical, 14)
             .padding(.horizontal, 20)
@@ -188,7 +188,7 @@ struct CircleGlassButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: diameter * 0.36, weight: .bold))
-            .foregroundStyle(Theme.textPrimary)
+            .foregroundStyle(Theme.neonPurple)
             .frame(width: diameter, height: diameter)
             .contentShape(Circle())
             .modifier(GlassBackground(shape: Circle(), shadowRadius: 8, isInteractive: true))

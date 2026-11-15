@@ -43,6 +43,7 @@ struct PinDropApp: App {
                 Task { await appState.refresh() }
             case .background:
                 appState.pruneExpiredPins()
+                appState.goOffline()
             default:
                 break
             }

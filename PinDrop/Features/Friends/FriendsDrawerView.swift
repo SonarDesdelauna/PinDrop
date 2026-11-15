@@ -15,6 +15,8 @@ struct FriendsDrawerView: View {
     @State private var isConfirmingSignOut = false
     @State private var isContactsPresented = false
     @State private var profilePath: [UserProfile] = []
+    @State private var showsSuggestions = false
+    @State private var requestedSuggestions: Set<UUID> = []
     @FocusState private var isQueryFocused: Bool
 
     var body: some View {
@@ -24,6 +26,7 @@ struct FriendsDrawerView: View {
             ScrollView {
                 VStack(spacing: 18) {
                     profileCard
+                    bestFriendCard
                     addFriendCard
                     contactsCard
                     if !appState.friendsSnapshot.incoming.isEmpty {
@@ -268,9 +271,176 @@ struct FriendsDrawerView: View {
                 .foregroundStyle(requestResult.isSuccess ? Theme.emerald : Theme.warning)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
+
+            if showsSuggestions {
+                suggestionsList
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
         .padding(16)
         .glassCard()
+        .animation(Theme.spring, value: showsSuggestions)
+        .onChange(of: isQueryFocused) { _, focused in
+            guard focused else { return }
+            showsSuggestions = true
+            Task { await appState.reloadSuggestions() }
+        }
+    }
+
+    private var filteredSuggestions: [FriendSuggestion] {
+        let query = trimmedQuery.lowercased()
+        let available = appState.suggestions.filter { appState.friendsSnapshot.friendshipIDs[$0.profile.id] == nil }
+        guard !query.isEmpty else { return available }
+        return available.filter {
+            $0.profile.username.lowercased().contains(query) || $0.profile.displayName.lowercased().contains(query)
+        }
+    }
+
+    private var suggestionsList: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("friends.suggested.title")
+                    .font(Theme.text(.subheadline, weight: .semibold))
+                    .foregroundStyle(Theme.textSecondary)
+                Spacer(minLength: 8)
+                Button {
+                    showsSuggestions = false
+                    isQueryFocused = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                }
+                .buttonStyle(CircleGlassButtonStyle(diameter: 28))
+                .accessibilityLabel(Text("common.close"))
+            }
+            if filteredSuggestions.isEmpty {
+                Text("friends.suggested.empty")
+                    .font(Theme.text(.footnote))
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, 6)
+            } else {
+                ForEach(filteredSuggestions.prefix(8)) { suggestion in
+                    suggestionRow(suggestion)
+                }
+            }
+        }
+    }
+
+    private func suggestionRow(_ suggestion: FriendSuggestion) -> some View {
+        let user = suggestion.profile
+        let isRequested = requestedSuggestions.contains(user.id)
+            || appState.friendsSnapshot.outgoing.contains { $0.addresseeID == user.id }
+        return HStack(spacing: 10) {
+            Button {
+                profilePath.append(user)
+            } label: {
+                HStack(spacing: 10) {
+                    AvatarBadge(user: user, size: 38)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(verbatim: user.displayName)
+                            .font(Theme.text(.subheadline, weight: .semibold))
+                            .foregroundStyle(Theme.textPrimary)
+                            .lineLimit(1)
+                        Group {
+                            if suggestion.mutualCount > 0 {
+                                Text("friends.suggested.mutual \(suggestion.mutualCount)")
+                            } else if suggestion.isNearby {
+                                Text("friends.suggested.nearby")
+                            } else {
+                                Text(verbatim: user.handle)
+                            }
+                        }
+                        .font(Theme.text(.caption))
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                    }
+                    Spacer(minLength: 6)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PressableButtonStyle(pressedScale: 0.98))
+
+            if isRequested {
+                Text("contacts.requested")
+                    .font(Theme.text(.caption, weight: .bold))
+                    .foregroundStyle(Theme.textSecondary)
+            } else {
+                Button {
+                    HapticManager.shared.tap()
+                    requestedSuggestions.insert(user.id)
+                    Task {
+                        let result = await appState.sendFriendRequest(to: user.username)
+                        if result?.isSuccess != true {
+                            requestedSuggestions.remove(user.id)
+                        }
+                    }
+                } label: {
+                    Label("contacts.add", systemImage: "person.badge.plus")
+                }
+                .buttonStyle(SmallPillButtonStyle(isProminent: true))
+            }
+        }
+    }
+
+    // MARK: - Best friend
+
+    @ViewBuilder
+    private var bestFriendCard: some View {
+        if let best = appState.bestFriend {
+            Button {
+                HapticManager.shared.tap()
+                profilePath.append(best.profile)
+            } label: {
+                HStack(spacing: 12) {
+                    AvatarBadge(user: best.profile, size: 48)
+                        .overlay(alignment: .bottomTrailing) {
+                            Text(verbatim: best.time.isBestFriend ? "💜" : "🤝")
+                                .font(.system(size: 15))
+                                .offset(x: 4, y: 4)
+                        }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(best.time.isBestFriend ? "bestFriend.card.title" : "bestFriend.card.closest")
+                            .font(Theme.text(.caption, weight: .bold))
+                            .foregroundStyle(Theme.neonPurple)
+                        Text(verbatim: best.profile.displayName)
+                            .font(Theme.text(.headline, weight: .bold))
+                            .foregroundStyle(Theme.textPrimary)
+                            .lineLimit(1)
+                        Text("bestFriend.together \(BestFriendProgressView.duration(best.time.seconds))")
+                            .font(Theme.text(.caption))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    .multilineTextAlignment(.leading)
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Theme.neonPurple)
+                }
+                .padding(14)
+                .glassCard()
+            }
+            .buttonStyle(PressableButtonStyle(pressedScale: 0.98))
+        } else {
+            HStack(spacing: 12) {
+                Text(verbatim: "💜")
+                    .font(.system(size: 24))
+                    .frame(width: 48, height: 48)
+                    .background(Circle().fill(Theme.electricViolet.opacity(0.18)))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("bestFriend.card.title")
+                        .font(Theme.text(.caption, weight: .bold))
+                        .foregroundStyle(Theme.neonPurple)
+                    Text("bestFriend.card.empty")
+                        .font(Theme.text(.footnote))
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .glassCard()
+        }
     }
 
     private func sendRequest() {
@@ -495,6 +665,14 @@ struct FriendsDrawerView: View {
         } label: {
             HStack(spacing: 12) {
                 AvatarBadge(user: friend, size: 42)
+                    .overlay {
+                        if appState.isOnline(friend.id) {
+                            Circle()
+                                .strokeBorder(Theme.emerald, lineWidth: 2.5)
+                                .padding(-3)
+                                .accessibilityLabel(Text("friends.online"))
+                        }
+                    }
                     .overlay(alignment: .bottomTrailing) {
                         if activePin != nil {
                             Circle()

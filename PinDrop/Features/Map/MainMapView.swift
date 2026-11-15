@@ -340,7 +340,8 @@ struct MainMapView: View {
                     isLocked: appState.isLocked(pin),
                     distanceText: appState.isOwn(pin) ? nil : appState.distanceText(to: pin.location),
                     namespace: heroNamespace,
-                    isHeroActive: !inactiveHeroIDs.contains(pin.id)
+                    isHeroActive: !inactiveHeroIDs.contains(pin.id),
+                    isOnline: !appState.isOwn(pin) && appState.isOnline(pin.author.id)
                 )
             }
             .buttonStyle(PressableButtonStyle())
@@ -366,57 +367,30 @@ struct MainMapView: View {
         .animation(Theme.spring, value: currentSpeed == nil)
     }
 
-    /// Top bar that always fits the screen width: the brand and the views counter shrink
-    /// on narrow phones instead of pushing the whole interface off screen.
+    /// Profile views centered at the top, avatar and bell on the right, speed on the left
+    /// while moving.
     private var topHUD: some View {
-        VStack(spacing: 10) {
-            ViewThatFits(in: .horizontal) {
-                topRow(showsBrandName: true, compactViews: false)
-                topRow(showsBrandName: false, compactViews: false)
-                topRow(showsBrandName: false, compactViews: true)
-            }
+        ZStack(alignment: .top) {
             HStack(alignment: .top, spacing: 10) {
-                VStack(alignment: .leading, spacing: 8) {
-                    statusPill
-                    friendsPill
-                    if let speed = currentSpeed {
-                        speedPill(speed)
-                            .transition(.move(edge: .leading).combined(with: .opacity))
-                    }
+                if let speed = currentSpeed {
+                    speedPill(speed)
+                        .padding(.top, 62)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
                 }
                 Spacer(minLength: 0)
-                bellButton
-                    .padding(.trailing, 1)
+                VStack(spacing: 10) {
+                    profileButton
+                    bellButton
+                }
             }
+            ViewThatFits(in: .horizontal) {
+                viewsPill(compact: false)
+                viewsPill(compact: true)
+            }
+            .padding(.horizontal, 60)
+            .padding(.top, 8)
         }
         .frame(maxWidth: .infinity)
-    }
-
-    private func topRow(showsBrandName: Bool, compactViews: Bool) -> some View {
-        HStack(spacing: 8) {
-            brandPill(showsName: showsBrandName)
-            Spacer(minLength: 4)
-            viewsPill(compact: compactViews)
-            profileButton
-        }
-    }
-
-    private func brandPill(showsName: Bool) -> some View {
-        HStack(spacing: 8) {
-            AppLogoView(size: 24)
-            if showsName {
-                Text(verbatim: "PinDrop")
-                    .font(Theme.rounded(.headline, weight: .heavy))
-                    .foregroundStyle(Theme.textPrimary)
-                    .fixedSize()
-            }
-        }
-        .padding(.leading, 8)
-        .padding(.trailing, showsName ? 14 : 8)
-        .padding(.vertical, 8)
-        .glassCapsule()
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: "PinDrop"))
     }
 
     /// "N profile views", like the counter next to the avatar.
@@ -437,7 +411,7 @@ struct MainMapView: View {
                 }
             }
             .font(Theme.rounded(.footnote, weight: .bold))
-            .foregroundStyle(Theme.textPrimary)
+            .foregroundStyle(Theme.neonPurple)
             .lineLimit(1)
             .padding(.horizontal, 11)
             .padding(.vertical, 7)
@@ -453,7 +427,7 @@ struct MainMapView: View {
     private func speedPill(_ speed: Double) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "gauge.with.dots.needle.67percent")
-                .foregroundStyle(Theme.warning)
+                .foregroundStyle(Theme.neonPurple)
             Text(verbatim: LocaleFormatter.speed(metersPerSecond: speed))
                 .contentTransition(.numericText())
         }
@@ -468,61 +442,6 @@ struct MainMapView: View {
         .animation(.snappy, value: Int(speed * 3.6))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("hud.speed \(LocaleFormatter.speed(metersPerSecond: speed))"))
-    }
-
-    @ViewBuilder
-    private var statusPill: some View {
-        if let ownPin = appState.ownActivePin {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(Theme.emerald)
-                    .frame(width: 8, height: 8)
-                    .pulsing()
-                TimelineView(.periodic(from: .now, by: 30)) { context in
-                    Text("hud.live \(LocaleFormatter.remaining(until: ownPin.expiresAt, from: context.date))")
-                }
-            }
-            .font(Theme.rounded(.subheadline, weight: .bold))
-            .foregroundStyle(Theme.textPrimary)
-            .lineLimit(1)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .glassCapsule()
-            .fixedSize()
-        } else {
-            HStack(spacing: 6) {
-                Image(systemName: "lock.fill")
-                    .foregroundStyle(Theme.neonPurple)
-                Text("hud.locked")
-            }
-            .font(Theme.rounded(.subheadline, weight: .bold))
-            .foregroundStyle(Theme.textPrimary)
-            .lineLimit(1)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .glassCapsule()
-            .fixedSize()
-        }
-    }
-
-    @ViewBuilder
-    private var friendsPill: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "person.2.fill")
-                .foregroundStyle(Theme.emerald)
-            if appState.activeFriendsCount > 0 {
-                Text("hud.friendsLive \(appState.activeFriendsCount)")
-            } else {
-                Text("hud.noFriendsLive")
-            }
-        }
-        .font(Theme.rounded(.subheadline, weight: .semibold))
-        .foregroundStyle(Theme.textPrimary)
-        .lineLimit(1)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .glassCapsule()
-        .fixedSize()
     }
 
     private var profileButton: some View {
@@ -548,7 +467,7 @@ struct MainMapView: View {
         } label: {
             Image(systemName: unread > 0 ? "bell.badge.fill" : "bell.fill")
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Theme.textPrimary)
+                .foregroundStyle(Theme.neonPurple)
                 .symbolEffect(.bounce, value: unread)
                 .frame(width: 48, height: 48)
                 .contentShape(Circle())
@@ -631,17 +550,18 @@ struct MainMapView: View {
                 appState.isFriendsDrawerPresented = true
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
         .glassCapsule()
+        .padding(.horizontal, 12)
     }
 
     private func dockButton(systemImage: String, label: LocalizedStringKey, badge: Int, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(Theme.textPrimary)
-                .frame(width: 48, height: 48)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(Theme.neonPurple)
+                .frame(width: 42, height: 42)
                 .contentShape(Circle())
                 .overlay(alignment: .topTrailing) {
                     if badge > 0 {
@@ -665,9 +585,9 @@ struct MainMapView: View {
             appState.presentCamera()
         } label: {
             Image(systemName: "camera.fill")
-                .font(.system(size: 34, weight: .bold))
+                .font(.system(size: 27, weight: .bold))
                 .foregroundStyle(Theme.accentGradient)
-                .frame(width: 64, height: 64)
+                .frame(width: 52, height: 52)
                 .contentShape(Circle())
         }
         .buttonStyle(PressableButtonStyle(pressedScale: 0.9))

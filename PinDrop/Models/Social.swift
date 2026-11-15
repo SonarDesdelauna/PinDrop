@@ -136,6 +136,28 @@ struct FriendTime: Decodable, Hashable, Sendable {
     }
 }
 
+/// A row returned by `suggested_friends`.
+struct SuggestionRow: Decodable, Hashable, Sendable {
+    let profileID: UUID
+    let mutualCount: Int
+    let reason: String
+
+    enum CodingKeys: String, CodingKey {
+        case profileID = "profile_id"
+        case mutualCount = "mutual_count"
+        case reason
+    }
+}
+
+/// A suggested friend with their profile.
+struct FriendSuggestion: Identifiable, Hashable, Sendable {
+    let profile: UserProfile
+    let mutualCount: Int
+    let isNearby: Bool
+
+    var id: UUID { profile.id }
+}
+
 /// A row returned by `match_contacts`.
 struct ContactMatch: Decodable, Hashable, Sendable {
     let matchedHash: String

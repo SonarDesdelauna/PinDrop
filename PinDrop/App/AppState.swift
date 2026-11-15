@@ -91,6 +91,9 @@ final class AppState {
     /// The app-wide accent color (the user's profile color). Changing it rebuilds the UI.
     private(set) var accentHex: String = AccentStore.hex
     var isNotificationsPresented = false
+    /// Friends with the app open right now.
+    private(set) var onlineFriendIDs: Set<UUID> = []
+    private(set) var suggestions: [FriendSuggestion] = []
     /// Profile opened from the friends list, notifications or the map.
     var presentedProfile: UserProfile?
 
@@ -101,6 +104,7 @@ final class AppState {
     @ObservationIgnored private var refreshQueued = false
     @ObservationIgnored private var housekeepingTask: Task<Void, Never>?
     @ObservationIgnored private var startTask: Task<Void, Never>?
+    @ObservationIgnored private var hasLoadedOnlineFriends = false
     @ObservationIgnored private var toastDismissTask: Task<Void, Never>?
     @ObservationIgnored private var placeLookupsInFlight: Set<String> = []
     @ObservationIgnored private var imageLoadsInFlight: Set<String> = []
@@ -201,6 +205,72 @@ final class AppState {
 
     var unreadNotificationCount: Int {
         notifications.reduce(0) { $0 + ($1.isUnread ? 1 : 0) }
+    }
+
+    func isOnline(_ userID: UUID) -> Bool {
+        onlineFriendIDs.contains(userID)
+    }
+
+    /// The friend you spend the most time with.
+    var bestFriend: (profile: UserProfile, time: FriendTime)? {
+        friends
+            .compactMap { friend in friendTimes[friend.id].map { (profile: friend, time: $0) } }
+            .filter { $0.time.seconds > 0 || $0.time.isBestFriend }
+            .max { lhs, rhs in
+                if lhs.time.isBestFriend != rhs.time.isBestFriend { return !lhs.time.isBestFriend }
+                return lhs.time.seconds < rhs.time.seconds
+            }
+    }
+
+    /// Tells the server the app is open and checks which friends are online. A friend who just
+    /// opened the app is announced with a popup.
+    func refreshOnlinePresence() async {
+        guard sessionPhase == .ready else { return }
+        try? await dataService.touchPresence()
+        guard let ids = try? await dataService.fetchOnlineFriends() else { return }
+        let online = Set(ids)
+        if hasLoadedOnlineFriends {
+            let arrived = online.subtracting(onlineFriendIDs)
+            if let friend = friends.first(where: { arrived.contains($0.id) }) {
+                HapticManager.shared.success()
+                showToast(.ping, title: Self.reconnectPhrase(for: friend.firstName))
+            }
+        }
+        hasLoadedOnlineFriends = true
+        if online != onlineFriendIDs {
+            withAnimation(Theme.spring) {
+                onlineFriendIDs = online
+            }
+        }
+    }
+
+    /// Called when the app goes to the background.
+    func goOffline() {
+        Task { [dataService] in
+            try? await dataService.goOffline()
+        }
+    }
+
+    private static func reconnectPhrase(for name: String) -> String {
+        switch Int.random(in: 0..<5) {
+        case 0: String(localized: "online.toast.1 \(name)")
+        case 1: String(localized: "online.toast.2 \(name)")
+        case 2: String(localized: "online.toast.3 \(name)")
+        case 3: String(localized: "online.toast.4 \(name)")
+        default: String(localized: "online.toast.5 \(name)")
+        }
+    }
+
+    func reloadSuggestions() async {
+        guard sessionPhase == .ready, let rows = try? await dataService.fetchSuggestions() else { return }
+        let profiles = (try? await dataService.fetchProfiles(rows.map(\.profileID))) ?? []
+        let byID = Dictionary(profiles.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let result = rows.compactMap { row in
+            byID[row.profileID].map { FriendSuggestion(profile: $0, mutualCount: row.mutualCount, isNearby: row.reason == "nearby") }
+        }
+        withAnimation(Theme.spring) {
+            suggestions = result
+        }
     }
 
     func friendTime(with friendID: UUID) -> FriendTime? {
@@ -619,6 +689,9 @@ final class AppState {
         housekeepingTask = nil
         startTask?.cancel()
         startTask = nil
+        onlineFriendIDs = []
+        suggestions = []
+        hasLoadedOnlineFriends = false
         sessionUserID = nil
         sessionPhase = .idle
         currentUser = .placeholder
@@ -666,7 +739,8 @@ final class AppState {
         async let friendTimesLoad: Void = reloadFriendTimes()
         async let publicPlacesLoad: Void = reloadPublicPlaces(force: true)
         async let heartbeatLoad: Void = sendHeartbeatIfNeeded()
-        _ = await (notificationsLoad, friendTimesLoad, publicPlacesLoad, heartbeatLoad)
+        async let presenceLoad: Void = refreshOnlinePresence()
+        _ = await (notificationsLoad, friendTimesLoad, publicPlacesLoad, heartbeatLoad, presenceLoad)
         do {
             async let profile = dataService.currentProfile()
             async let friends = dataService.fetchFriends()
@@ -727,6 +801,7 @@ final class AppState {
                 guard let self, !Task.isCancelled else { return }
                 self.pruneExpiredPins()
                 await self.sendHeartbeatIfNeeded()
+                await self.refreshOnlinePresence()
                 tick += 1
                 if tick.isMultiple(of: 2) {
                     await self.refresh()

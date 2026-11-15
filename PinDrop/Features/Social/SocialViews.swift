@@ -228,7 +228,7 @@ struct SmallPillButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(Theme.text(.footnote, weight: .bold))
-            .foregroundStyle(Color.white)
+            .foregroundStyle(isProminent ? Color.white : Theme.neonPurple)
             .lineLimit(1)
             .padding(.horizontal, 14)
             .padding(.vertical, 7)

@@ -383,6 +383,26 @@ final class SupabaseDataService: Sendable {
             .value
     }
 
+    // MARK: - Online presence & suggestions
+
+    /// Marks the app as open (no position is sent).
+    func touchPresence() async throws {
+        try await client.rpc("touch_presence").execute()
+    }
+
+    func goOffline() async throws {
+        try await client.rpc("go_offline").execute()
+    }
+
+    /// Friends with the app open right now.
+    func fetchOnlineFriends() async throws -> [UUID] {
+        try await client.rpc("friends_online").execute().value
+    }
+
+    func fetchSuggestions() async throws -> [SuggestionRow] {
+        try await client.rpc("suggested_friends", params: ["lim": 20]).execute().value
+    }
+
     // MARK: - Notifications
 
     func fetchNotifications() async throws -> [AppNotification] {

@@ -9,6 +9,8 @@ struct PinAnnotationView: View {
     let distanceText: String?
     let namespace: Namespace.ID
     let isHeroActive: Bool
+    /// The author has the app open right now.
+    var isOnline = false
 
     private let diameter: CGFloat = 60
     private var ringDiameter: CGFloat { diameter + 12 }
@@ -19,6 +21,13 @@ struct PinAnnotationView: View {
                 Circle()
                     .fill(Theme.obsidian.opacity(0.7))
                     .frame(width: ringDiameter + 4, height: ringDiameter + 4)
+                    .overlay {
+                        if isOnline {
+                            Circle()
+                                .strokeBorder(Theme.emerald, lineWidth: 3)
+                                .shadow(color: Theme.emerald.opacity(0.7), radius: 8)
+                        }
+                    }
 
                 TimelineView(.periodic(from: .now, by: 30)) { context in
                     ExpiryRing(progress: pin.remainingFraction(at: context.date), lineWidth: 3.5, isLive: isOwn)
