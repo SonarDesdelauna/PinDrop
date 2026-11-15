@@ -70,6 +70,14 @@ enum LocaleFormatter {
         return Duration.seconds(roundedSeconds).formatted(.units(allowed: [.hours, .minutes], width: .narrow))
     }
 
+    /// How long you've been somewhere, e.g. `12m`, `2h 5m`, `3d 4h` (localized units).
+    static func dwell(since start: Date, now: Date = .now) -> String {
+        let seconds = max(60, now.timeIntervalSince(start))
+        let minutes = (seconds / 60).rounded(.down) * 60
+        let units: Set<Duration.UnitsFormatStyle.Unit> = seconds >= 86_400 ? [.days, .hours] : [.hours, .minutes]
+        return Duration.seconds(minutes).formatted(.units(allowed: units, width: .narrow, maximumUnitCount: 2))
+    }
+
     /// Walking duration, e.g. `6 min` / `1 hr, 5 min` (localized units).
     static func walkingDuration(seconds: TimeInterval) -> String {
         let roundedSeconds = max(60, (seconds / 60).rounded() * 60)

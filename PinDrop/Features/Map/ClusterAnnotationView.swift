@@ -4,6 +4,7 @@ import SwiftUI
 /// ring and the reverse-geocoded place name.
 struct ClusterAnnotationView: View {
     let cluster: PinCluster
+    let thumbnails: [UUID: PinImage]
     let placeName: String?
     let currentUserID: UUID
     let isAppUnlocked: Bool
@@ -41,7 +42,7 @@ struct ClusterAnnotationView: View {
                         .glow(Theme.neonPurple, radius: 10)
 
                     ForEach(Array(visiblePins.enumerated()), id: \.element.id) { index, pin in
-                        PinThumbnail(pin: pin, size: thumbSize, isLocked: isLocked(pin))
+                        PinThumbnail(pin: pin, image: thumbnails[pin.id], size: thumbSize, isLocked: isLocked(pin))
                             .heroGeometry(id: pin.id, namespace: namespace, isActive: !inactiveHeroPinIDs.contains(pin.id))
                             .offset(offset(for: index, count: visiblePins.count))
                             .zIndex(Double(visiblePins.count - index))

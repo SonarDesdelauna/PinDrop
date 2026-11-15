@@ -121,6 +121,12 @@ enum ImageCompressor {
     }
 }
 
+/// A downloaded image together with its cache key (the storage path).
+struct PinImage: Equatable, Sendable {
+    let key: String
+    let data: Data
+}
+
 /// Main-actor cache of decoded images, keyed by storage path.
 @MainActor
 enum ImageCache {

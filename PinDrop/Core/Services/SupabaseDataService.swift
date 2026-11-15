@@ -260,6 +260,64 @@ final class SupabaseDataService: Sendable {
         return try await fetchPin(pin.id)
     }
 
+    // MARK: - Places
+
+    func fetchPlaces() async throws -> [SavedPlace] {
+        try await client
+            .rpc("my_places")
+            .execute()
+            .value
+    }
+
+    func addPlace(name: String, emoji: String, at point: GeoPoint) async throws {
+        struct NewPlace: Encodable, Sendable {
+            let name: String
+            let emoji: String
+            let latitude: Double
+            let longitude: Double
+            let radius_m: Int
+        }
+        try await client
+            .from("places")
+            .insert(NewPlace(
+                name: String(name.prefix(40)),
+                emoji: emoji,
+                latitude: point.latitude,
+                longitude: point.longitude,
+                radius_m: SavedPlace.defaultRadius
+            ))
+            .execute()
+    }
+
+    func updatePlace(_ id: UUID, name: String, emoji: String) async throws {
+        try await client
+            .from("places")
+            .update(["name": String(name.prefix(40)), "emoji": emoji])
+            .eq("id", value: id)
+            .execute()
+    }
+
+    func deletePlace(_ id: UUID) async throws {
+        try await client
+            .from("places")
+            .delete()
+            .eq("id", value: id)
+            .execute()
+    }
+
+    /// Extends or starts visits of saved places around `point`. Returns how many matched.
+    @discardableResult
+    func recordPresence(at point: GeoPoint) async throws -> Int {
+        struct Params: Encodable, Sendable {
+            let lat: Double
+            let lon: Double
+        }
+        return try await client
+            .rpc("record_presence", params: Params(lat: point.latitude, lon: point.longitude))
+            .execute()
+            .value
+    }
+
     // MARK: - Pings
 
     func sendOnMyWayPing(to pin: PhotoPin, etaSeconds: TimeInterval) async throws {

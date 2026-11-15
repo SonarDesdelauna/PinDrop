@@ -116,31 +116,31 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "PinDrop reads your location only at the moment you take a photo, to pin it on your friends' map. There is no background tracking."
+            "value" : "PinDrop uses your location only while the app is open: to pin your photos, show you on the map with how long you've been there, and count visits to your saved places. There is no background tracking."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "PinDrop legge la tua posizione solo nell'istante in cui scatti una foto, per fissarla sulla mappa dei tuoi amici. Nessun tracciamento in background."
+            "value" : "PinDrop usa la tua posizione solo mentre l'app è aperta: per fissare le tue foto, mostrarti sulla mappa con da quanto tempo sei lì e contare le visite ai tuoi posti salvati. Nessun tracciamento in background."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "PinDrop solo lee tu ubicación en el momento en que tomas una foto, para fijarla en el mapa de tus amigos. No hay rastreo en segundo plano."
+            "value" : "PinDrop usa tu ubicación solo mientras la app está abierta: para fijar tus fotos, mostrarte en el mapa con cuánto tiempo llevas ahí y contar las visitas a tus lugares guardados. No hay rastreo en segundo plano."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "PinDrop lit ta position uniquement au moment où tu prends une photo, pour l'épingler sur la carte de tes amis. Aucun suivi en arrière-plan."
+            "value" : "PinDrop utilise ta position uniquement quand l'app est ouverte : pour épingler tes photos, te montrer sur la carte avec depuis combien de temps tu es là et compter tes visites à tes lieux enregistrés. Aucun suivi en arrière-plan."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "PinDrop liest deinen Standort nur in dem Moment, in dem du ein Foto machst, um es auf der Karte deiner Freunde zu pinnen. Es gibt kein Tracking im Hintergrund."
+            "value" : "PinDrop nutzt deinen Standort nur, während die App geöffnet ist: um deine Fotos zu pinnen, dich auf der Karte mit deiner Aufenthaltsdauer zu zeigen und Besuche deiner gespeicherten Orte zu zählen. Es gibt kein Tracking im Hintergrund."
           }
         }
       }

@@ -4,7 +4,10 @@ import SwiftUI
 /// Dark social map with floating HUD, bottom dock, hub clustering and the Stories viewer overlay.
 struct MainMapView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.scenePhase) private var scenePhase
     @Namespace private var heroNamespace
+    /// Center of the visible map, used to save a place where the map is pointing.
+    @State private var mapCenter: GeoPoint?
     @State private var cameraPosition: MapCameraPosition = .automatic
     @State private var hasCenteredOnUser = false
     /// Above this camera altitude the map switches to the photorealistic 3D globe.
@@ -37,6 +40,30 @@ struct MainMapView: View {
         .fullScreenCover(isPresented: $state.isCameraPresented) {
             CameraStudioView()
         }
+        .sheet(isPresented: $state.isPlacesPresented) {
+            PlacesView(
+                onSelect: { place in
+                    appState.isPlacesPresented = false
+                    appState.focusMap(on: place.location, spanMeters: 700)
+                },
+                onAdd: {
+                    appState.isPlacesPresented = false
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(450))
+                        appState.isAddPlacePresented = true
+                    }
+                }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(.ultraThinMaterial)
+            .presentationCornerRadius(Theme.Radius.sheet)
+        }
+        .sheet(isPresented: $state.isAddPlacePresented) {
+            PlaceEditorView(mode: .add, userLocation: appState.userLocation, mapCenter: mapCenter)
+                .presentationDetents([.large])
+                .presentationCornerRadius(Theme.Radius.sheet)
+        }
         .sheet(isPresented: $state.isFriendsDrawerPresented) {
             FriendsDrawerView()
                 .presentationDetents([.medium, .large])
@@ -57,7 +84,18 @@ struct MainMapView: View {
                 cameraPosition = .region(region(around: location, spanMeters: 2_600))
             }
         }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                appState.startLiveTracking()
+            } else if phase == .background {
+                appState.stopLiveTracking()
+            }
+        }
+        .onDisappear {
+            appState.stopLiveTracking()
+        }
         .onAppear {
+            appState.startLiveTracking()
             if let location = appState.userLocation, !hasCenteredOnUser {
                 hasCenteredOnUser = true
                 cameraPosition = .region(region(around: location, spanMeters: 2_600))
@@ -69,6 +107,30 @@ struct MainMapView: View {
 
     private var mapLayer: some View {
         Map(position: $cameraPosition, interactionModes: .all) {
+            ForEach(appState.places) { place in
+                Annotation(place.name, coordinate: place.coordinate, anchor: .bottom) {
+                    Button {
+                        HapticManager.shared.tap()
+                        appState.isPlacesPresented = true
+                    } label: {
+                        PlaceAnnotationView(place: place, isCurrent: appState.currentPlace?.id == place.id)
+                    }
+                    .buttonStyle(PressableButtonStyle())
+                }
+                .annotationTitles(.hidden)
+            }
+
+            if let userLocation = appState.userLocation {
+                Annotation("", coordinate: userLocation.coordinate, anchor: .center) {
+                    MyLocationAnnotationView(
+                        user: appState.currentUser,
+                        place: appState.currentPlace,
+                        since: appState.presenceSince
+                    )
+                }
+                .annotationTitles(.hidden)
+            }
+
             ForEach(appState.clusters) { cluster in
                 Annotation(appState.placeName(for: cluster) ?? "", coordinate: cluster.coordinate, anchor: .bottom) {
                     annotationView(for: cluster)
@@ -81,7 +143,8 @@ struct MainMapView: View {
             MapCompass()
             MapPitchToggle()
         }
-        .onMapCameraChange(frequency: .continuous) { context in
+        .onMapCameraChange(frequency: .onEnd) { context in
+            mapCenter = GeoPoint(context.region.center)
             let shouldShowGlobe = context.camera.distance > Self.globeAltitude
             if shouldShowGlobe != isGlobeMode {
                 withAnimation(.easeInOut(duration: 0.45)) {
@@ -102,6 +165,9 @@ struct MainMapView: View {
             } label: {
                 ClusterAnnotationView(
                     cluster: cluster,
+                    thumbnails: Dictionary(uniqueKeysWithValues: cluster.pins.compactMap { pin in
+                        appState.thumbnail(for: pin).map { (pin.id, $0) }
+                    }),
                     placeName: appState.placeName(for: cluster),
                     currentUserID: appState.currentUser.id,
                     isAppUnlocked: appState.isUnlocked,
@@ -118,6 +184,7 @@ struct MainMapView: View {
             } label: {
                 PinAnnotationView(
                     pin: pin,
+                    thumbnail: appState.thumbnail(for: pin),
                     isOwn: appState.isOwn(pin),
                     isLocked: appState.isLocked(pin),
                     distanceText: appState.isOwn(pin) ? nil : appState.distanceText(to: pin.location),
@@ -294,15 +361,25 @@ struct MainMapView: View {
             dockButton(systemImage: "location.fill", label: "dock.recenter", badge: 0) {
                 recenter()
             }
-            Spacer(minLength: 12)
+            Spacer(minLength: 6)
+            dockButton(systemImage: "star.fill", label: "dock.places", badge: 0) {
+                HapticManager.shared.tap()
+                appState.isPlacesPresented = true
+            }
+            Spacer(minLength: 6)
             shutterButton
-            Spacer(minLength: 12)
-            dockButton(systemImage: "person.2.fill", label: "dock.friends", badge: appState.activeFriendsCount) {
+            Spacer(minLength: 6)
+            dockButton(systemImage: "mappin.and.ellipse", label: "dock.addPlace", badge: 0) {
+                HapticManager.shared.tap()
+                appState.isAddPlacePresented = true
+            }
+            Spacer(minLength: 6)
+            dockButton(systemImage: "person.2.fill", label: "dock.friends", badge: appState.activeFriendsCount + appState.pendingRequestCount) {
                 HapticManager.shared.tap()
                 appState.isFriendsDrawerPresented = true
             }
         }
-        .padding(.horizontal, 22)
+        .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .glassCapsule()
     }
@@ -312,7 +389,7 @@ struct MainMapView: View {
             Image(systemName: systemImage)
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary)
-                .frame(width: 52, height: 52)
+                .frame(width: 48, height: 48)
                 .background(Circle().fill(Color.white.opacity(0.06)))
                 .overlay(alignment: .topTrailing) {
                     if badge > 0 {

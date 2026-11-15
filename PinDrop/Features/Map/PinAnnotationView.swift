@@ -3,6 +3,7 @@ import SwiftUI
 /// Circular photo pin with a 6-hour countdown ring, blur-to-unlock state and distance badge.
 struct PinAnnotationView: View {
     let pin: PhotoPin
+    let thumbnail: PinImage?
     let isOwn: Bool
     let isLocked: Bool
     let distanceText: String?
@@ -24,7 +25,7 @@ struct PinAnnotationView: View {
                 }
                 .frame(width: ringDiameter, height: ringDiameter)
 
-                PinThumbnail(pin: pin, size: diameter, isLocked: isLocked)
+                PinThumbnail(pin: pin, image: thumbnail, size: diameter, isLocked: isLocked)
                     .heroGeometry(id: pin.id, namespace: namespace, isActive: isHeroActive)
 
                 if isLocked {
@@ -116,16 +117,17 @@ struct ExpiryRing: View {
 
 /// Round photo thumbnail; frosted (blur 18) while the map is locked. While locked only the
 /// server-side pre-blurred preview is ever downloaded.
+/// The image is passed in explicitly: Map annotation content does not inherit custom
+/// environment values, so it must never read `AppState` from the environment.
 struct PinThumbnail: View {
     let pin: PhotoPin
+    let image: PinImage?
     let size: CGFloat
     let isLocked: Bool
 
-    @Environment(AppState.self) private var appState
-
     var body: some View {
         ZStack {
-            if let source = appState.thumbnail(for: pin),
+            if let source = image,
                let image = ImageCache.image(forKey: source.key, data: source.data) {
                 Image(uiImage: image)
                     .resizable()

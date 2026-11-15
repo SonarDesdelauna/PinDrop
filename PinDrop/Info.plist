@@ -50,7 +50,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>PinDrop uses the camera to capture live moments you choose to drop on the map. Photos from your library are never used.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>PinDrop reads your location only at the moment you take a photo, to pin it on your friends' map. There is no background tracking.</string>
+	<string>PinDrop uses your location only while the app is open: to pin your photos, show you on the map with how long you've been there, and count visits to your saved places. There is no background tracking.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

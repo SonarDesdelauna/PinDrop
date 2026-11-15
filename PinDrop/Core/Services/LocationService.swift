@@ -20,14 +20,18 @@ enum LocationError: LocalizedError, Sendable, Equatable {
 /// Privacy-first wrapper around `CLLocationManager`.
 ///
 /// - Only `requestWhenInUseAuthorization()` is ever used (never "Always").
-/// - There is no continuous tracking: every fix is a one-shot `requestLocation()` triggered by an
-///   explicit user action (taking a photo, asking for an ETA, opening the map for distance labels).
+/// - No background tracking. Live updates run only while the map is on screen (foreground), to
+///   show your own position, how long you've been there and visits to your saved places. Those
+///   positions stay on the device; only the photo location and place visits are uploaded.
 @MainActor
 @Observable
 final class LocationService: NSObject, CLLocationManagerDelegate {
     private(set) var authorizationStatus: CLAuthorizationStatus = .notDetermined
     private(set) var lastFix: GeoPoint?
     private(set) var lastFixDate: Date?
+    private(set) var isLiveUpdating = false
+    /// Called on every fix while live updates are running.
+    @ObservationIgnored var liveFixHandler: (@MainActor (GeoPoint) -> Void)?
 
     private let manager = CLLocationManager()
     @ObservationIgnored private var locationContinuations: [CheckedContinuation<GeoPoint?, Never>] = []
@@ -78,7 +82,9 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         return await withCheckedContinuation { continuation in
             locationContinuations.append(continuation)
             guard locationContinuations.count == 1 else { return }
-            manager.requestLocation()
+            if !isLiveUpdating {
+                manager.requestLocation()
+            }
             timeoutTask?.cancel()
             timeoutTask = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(12))
@@ -88,10 +94,29 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         }
     }
 
+    // MARK: - Live updates (foreground only)
+
+    func startLiveUpdates() {
+        guard isAuthorized, !isLiveUpdating else { return }
+        isLiveUpdating = true
+        manager.distanceFilter = 15
+        manager.startUpdatingLocation()
+    }
+
+    func stopLiveUpdates() {
+        guard isLiveUpdating else { return }
+        isLiveUpdating = false
+        manager.stopUpdatingLocation()
+        manager.distanceFilter = kCLDistanceFilterNone
+    }
+
     private func resolveLocationRequests(with point: GeoPoint?) {
         if let point {
             lastFix = point
             lastFixDate = .now
+            if isLiveUpdating {
+                liveFixHandler?(point)
+            }
         }
         timeoutTask?.cancel()
         timeoutTask = nil
@@ -112,6 +137,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
             continuation.resume(returning: status)
         }
         if !isAuthorized {
+            stopLiveUpdates()
             resolveLocationRequests(with: nil)
         }
     }

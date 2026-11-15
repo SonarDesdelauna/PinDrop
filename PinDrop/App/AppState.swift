@@ -68,6 +68,12 @@ final class AppState {
     var isCameraPresented = false
     var isFriendsDrawerPresented = false
     var isProfileEditorPresented = false
+    var isPlacesPresented = false
+    var isAddPlacePresented = false
+    /// Saved places with visit counts (private to the user).
+    private(set) var places: [SavedPlace] = []
+    /// Where the user is right now and since when (device only).
+    private(set) var presence: PresenceState?
 
     let dataService: SupabaseDataService
     let locationService: LocationService
@@ -80,6 +86,8 @@ final class AppState {
     @ObservationIgnored private var imageLoadsInFlight: Set<String> = []
     @ObservationIgnored private var failedImagePaths: Set<String> = []
     @ObservationIgnored private var pendingFocus: (pinID: UUID, openViewer: Bool)?
+    @ObservationIgnored private var lastPresenceUpload: Date?
+    @ObservationIgnored private var lastPresencePlaceIDs: Set<UUID> = []
 
     init(dataService: SupabaseDataService, locationService: LocationService) {
         self.dataService = dataService
@@ -167,27 +175,175 @@ final class AppState {
         return LocaleFormatter.distance(meters: GeoClustering.haversineDistance(from: userLocation, to: point))
     }
 
+    // MARK: - Presence & places
+
+    /// The saved place the user is currently in, if any.
+    var currentPlace: SavedPlace? {
+        guard let userLocation else { return nil }
+        return places
+            .filter { $0.contains(userLocation) }
+            .min {
+                GeoClustering.haversineDistance(from: $0.location, to: userLocation)
+                    < GeoClustering.haversineDistance(from: $1.location, to: userLocation)
+            }
+    }
+
+    /// Since when the user has been at the current spot (or saved place).
+    var presenceSince: Date? {
+        if let arrived = currentPlace?.currentArrivedAt {
+            if let since = presence?.since {
+                return min(arrived, since)
+            }
+            return arrived
+        }
+        return presence?.since
+    }
+
+    private var presenceDefaultsKey: String? {
+        sessionUserID.map { "pindrop.presence.\($0.uuidString)" }
+    }
+
+    private func loadPresence() {
+        guard let key = presenceDefaultsKey,
+              let data = UserDefaults.standard.data(forKey: key),
+              let stored = try? JSONDecoder().decode(PresenceState.self, from: data) else {
+            presence = nil
+            return
+        }
+        presence = Date.now.timeIntervalSince(stored.lastSeen) <= PresenceState.maximumGap ? stored : nil
+    }
+
+    private func savePresence() {
+        guard let key = presenceDefaultsKey else { return }
+        if let presence, let data = try? JSONEncoder().encode(presence) {
+            UserDefaults.standard.set(data, forKey: key)
+        } else {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
+    /// Starts foreground location updates while the map is on screen.
+    func startLiveTracking() {
+        guard sessionPhase == .ready, locationService.isAuthorized else { return }
+        locationService.liveFixHandler = { [weak self] point in
+            self?.handleFix(point)
+        }
+        locationService.startLiveUpdates()
+    }
+
+    func stopLiveTracking() {
+        locationService.stopLiveUpdates()
+        locationService.liveFixHandler = nil
+    }
+
+    private func handleFix(_ point: GeoPoint) {
+        userLocation = point
+        updatePresence(with: point)
+        uploadPresenceIfNeeded(point)
+    }
+
+    private func updatePresence(with point: GeoPoint) {
+        let now = Date.now
+        if var current = presence,
+           now.timeIntervalSince(current.lastSeen) <= PresenceState.maximumGap,
+           GeoClustering.haversineDistance(from: current.anchor, to: point) <= PresenceState.leaveDistance {
+            current.lastSeen = now
+            presence = current
+        } else {
+            presence = PresenceState(anchor: point, since: now, lastSeen: now)
+        }
+        savePresence()
+    }
+
+    /// Records visits of saved places: immediately when entering one, then every few minutes.
+    private func uploadPresenceIfNeeded(_ point: GeoPoint) {
+        let inside = Set(places.filter { $0.contains(point) }.map(\.id))
+        guard !inside.isEmpty else {
+            lastPresencePlaceIDs = []
+            return
+        }
+        let entered = !inside.isSubset(of: lastPresencePlaceIDs)
+        let stale = lastPresenceUpload.map { Date.now.timeIntervalSince($0) > 240 } ?? true
+        guard entered || stale else { return }
+        lastPresencePlaceIDs = inside
+        lastPresenceUpload = .now
+        Task { [weak self] in
+            guard let self else { return }
+            if (try? await self.dataService.recordPresence(at: point)) != nil {
+                await self.reloadPlaces()
+            }
+        }
+    }
+
+    func reloadPlaces() async {
+        guard sessionPhase == .ready, let fetched = try? await dataService.fetchPlaces() else { return }
+        withAnimation(Theme.spring) {
+            places = fetched
+        }
+    }
+
+    func addPlace(name: String, emoji: String, at point: GeoPoint) async -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        do {
+            try await dataService.addPlace(name: trimmed, emoji: emoji, at: point)
+            HapticManager.shared.success()
+            lastPresencePlaceIDs = []
+            if let userLocation, GeoClustering.haversineDistance(from: userLocation, to: point) <= Double(SavedPlace.defaultRadius) {
+                _ = try? await dataService.recordPresence(at: userLocation)
+            }
+            await reloadPlaces()
+            showToast(.success, title: String(localized: "places.added.title \(emoji) \(trimmed)"))
+            return true
+        } catch {
+            showToast(.warning, title: String(localized: "toast.error.title"), subtitle: error.localizedDescription)
+            return false
+        }
+    }
+
+    func updatePlace(_ place: SavedPlace, name: String, emoji: String) async {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            try await dataService.updatePlace(place.id, name: trimmed, emoji: emoji)
+            HapticManager.shared.success()
+            await reloadPlaces()
+        } catch {
+            showToast(.warning, title: String(localized: "toast.error.title"), subtitle: error.localizedDescription)
+        }
+    }
+
+    func deletePlace(_ place: SavedPlace) async {
+        do {
+            try await dataService.deletePlace(place.id)
+            HapticManager.shared.selection()
+            await reloadPlaces()
+        } catch {
+            showToast(.warning, title: String(localized: "toast.error.title"), subtitle: error.localizedDescription)
+        }
+    }
+
     // MARK: - Images
 
     /// The image shown in map thumbnails: the pre-blurred preview while locked, the thumb otherwise.
-    func thumbnail(for pin: PhotoPin) -> (key: String, data: Data)? {
+    func thumbnail(for pin: PhotoPin) -> PinImage? {
         let path = isLocked(pin) ? pin.blurPath : pin.thumbPath
         if let data = images[path] {
-            return (path, data)
+            return PinImage(key: path, data: data)
         }
         if let data = images[pin.blurPath] {
-            return (pin.blurPath, data)
+            return PinImage(key: pin.blurPath, data: data)
         }
         return nil
     }
 
     /// The image shown in the viewer: full resolution when available.
-    func fullImage(for pin: PhotoPin) -> (key: String, data: Data)? {
+    func fullImage(for pin: PhotoPin) -> PinImage? {
         if isLocked(pin) {
-            return images[pin.blurPath].map { (pin.blurPath, $0) }
+            return images[pin.blurPath].map { PinImage(key: pin.blurPath, data: $0) }
         }
         if let data = images[pin.imagePath] {
-            return (pin.imagePath, data)
+            return PinImage(key: pin.imagePath, data: data)
         }
         return thumbnail(for: pin)
     }
@@ -236,6 +392,7 @@ final class AppState {
         do {
             currentUser = try await dataService.currentProfile()
             sessionPhase = .ready
+            loadPresence()
         } catch {
             sessionPhase = .failed(error.localizedDescription)
             return
@@ -252,6 +409,13 @@ final class AppState {
 
     /// Clears every piece of user data (sign-out or account switch).
     func reset() {
+        stopLiveTracking()
+        places = []
+        presence = nil
+        lastPresenceUpload = nil
+        lastPresencePlaceIDs = []
+        isPlacesPresented = false
+        isAddPlacePresented = false
         housekeepingTask?.cancel()
         housekeepingTask = nil
         sessionUserID = nil
@@ -291,6 +455,11 @@ final class AppState {
     private func loadContent() async {
         if locationService.isAuthorized, let fix = await locationService.currentLocation(maximumAge: 120) {
             userLocation = fix
+            updatePresence(with: fix)
+        }
+        await reloadPlaces()
+        if let userLocation {
+            uploadPresenceIfNeeded(userLocation)
         }
         do {
             async let profile = dataService.currentProfile()
