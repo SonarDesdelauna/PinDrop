@@ -75,25 +75,30 @@ struct SyncShotCardView: View {
     }
 
     private func half(_ image: UIImage?, locked: Bool) -> some View {
-        ZStack {
-            Theme.surface
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .blur(radius: locked ? 16 : 0, opaque: true)
-            } else {
-                ProgressView()
-                    .tint(Color.white)
+        Color.clear
+            .overlay {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .blur(radius: locked ? 16 : 0, opaque: true)
+                } else {
+                    ZStack {
+                        Theme.surface
+                        ProgressView()
+                            .tint(Color.white)
+                    }
+                }
             }
-            if locked {
-                Image(systemName: "lock.fill")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(Color.white)
-                    .glow(Theme.neonPurple, radius: 14)
+            .clipped()
+            .overlay {
+                if locked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundStyle(Color.white)
+                        .glow(Theme.neonPurple, radius: 14)
+                }
             }
-        }
-        .clipped()
     }
 
     private func seam(vertical: Bool, length: CGFloat) -> some View {
@@ -105,12 +110,8 @@ struct SyncShotCardView: View {
         return ZStack {
             Rectangle()
                 .fill(gradient)
-                .frame(width: vertical ? 10 : length, height: vertical ? length : 10)
-                .blur(radius: 8)
-                .opacity(0.8)
-            Rectangle()
-                .fill(gradient)
-                .frame(width: vertical ? 3 : length, height: vertical ? length : 3)
+                .frame(width: vertical ? 2 : length, height: vertical ? length : 2)
+                .shadow(color: Theme.emerald.opacity(0.6), radius: 4)
             Image(systemName: "bolt.fill")
                 .font(.system(size: 13, weight: .heavy))
                 .foregroundStyle(Color.white)

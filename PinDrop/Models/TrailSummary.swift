@@ -45,9 +45,11 @@ struct TrailSummary: Hashable, Sendable {
     let friendsMet: [UserProfile]
     let startedAt: Date
     let endedAt: Date
+    /// The path along the streets, when directions are available.
+    var routePoints: [GeoPoint] = []
 
     var points: [GeoPoint] {
-        pins.map(\.location)
+        routePoints.count >= 2 ? routePoints : pins.map(\.location)
     }
 
     var isEmpty: Bool {
@@ -65,6 +67,7 @@ struct TrailSummary: Hashable, Sendable {
         currentUserID: UUID,
         crossPaths: [CrossPathEvent],
         window: TimeInterval = 43_200,
+        routePoints: [GeoPoint] = [],
         now: Date = .now
     ) -> TrailSummary {
         let cutoff = now.addingTimeInterval(-window)
@@ -73,8 +76,9 @@ struct TrailSummary: Hashable, Sendable {
             .sorted { $0.createdAt < $1.createdAt }
 
         var distance: Double = 0
-        for index in mine.indices.dropFirst() {
-            distance += GeoClustering.haversineDistance(from: mine[index - 1].location, to: mine[index].location)
+        let path = routePoints.count >= 2 ? routePoints : mine.map(\.location)
+        for index in path.indices.dropFirst() {
+            distance += GeoClustering.haversineDistance(from: path[index - 1], to: path[index])
         }
 
         let spots = GeoClustering.cluster(mine).count
@@ -101,7 +105,8 @@ struct TrailSummary: Hashable, Sendable {
             spotCount: spots,
             friendsMet: met.values.sorted { $0.displayName < $1.displayName },
             startedAt: mine.first?.createdAt ?? now,
-            endedAt: mine.last?.createdAt ?? now
+            endedAt: mine.last?.createdAt ?? now,
+            routePoints: routePoints
         )
     }
 }

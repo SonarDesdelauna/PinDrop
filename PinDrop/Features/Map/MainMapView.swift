@@ -253,16 +253,20 @@ struct MainMapView: View {
         }
     }
 
-    /// Neon trail colors: your accent gradient, each friend's own color.
-    private func trailColor(for trail: NeonTrail) -> Color {
-        trail.isCurrentUser ? Theme.neonPurple : Color(hexString: trail.user.avatarColorHex)
+    private func onlineIDs(for users: [UserProfile]) -> Set<UUID> {
+        Set(users.map(\.id).filter { appState.isOnline($0) })
     }
 
-    private func trailStyle(for trail: NeonTrail) -> AnyShapeStyle {
-        if trail.isCurrentUser {
-            return AnyShapeStyle(LinearGradient(colors: [Theme.electricViolet, Theme.neonPurple], startPoint: .leading, endPoint: .trailing))
+    /// Opens a friend's profile (a nearby demo friend starts a Sync Shot instead).
+    private func openFriend(_ friend: UserProfile) {
+        HapticManager.shared.tap()
+        if appState.isDemoFriend(friend.id) {
+            if appState.syncShotCandidates.contains(where: { $0.id == friend.id }) {
+                Task { await appState.startSyncShot(with: friend) }
+            }
+        } else {
+            appState.openProfile(friend)
         }
-        return AnyShapeStyle(Color(hexString: trail.user.avatarColorHex).opacity(0.7))
     }
 
     private func openOwnPins(_ pins: [PhotoPin]) {
@@ -276,16 +280,18 @@ struct MainMapView: View {
     private var mapLayer: some View {
         let skidSegments = SkidMarks.segments(trail: appState.trail, current: currentSpeed == nil ? nil : appState.userLocation)
         return Map(position: $cameraPosition, interactionModes: .all) {
-            ForEach(appState.neonTrails) { trail in
-                let coordinates = trail.points.map { displayCoordinate(for: $0) }
+            // Your evening trail only (friends never see it), following the streets.
+            let trailPoints = appState.myTrailPoints
+            if trailPoints.count >= 2 {
+                let coordinates = trailPoints.map(\.coordinate)
                 MapPolyline(coordinates: coordinates)
                     .stroke(
-                        trailColor(for: trail).opacity(trail.isCurrentUser ? 0.35 : 0.2),
+                        Theme.neonPurple.opacity(0.3),
                         style: StrokeStyle(lineWidth: 10, lineCap: .round, lineJoin: .round)
                     )
                 MapPolyline(coordinates: coordinates)
                     .stroke(
-                        trailStyle(for: trail),
+                        LinearGradient(colors: [Theme.electricViolet, Theme.neonPurple], startPoint: .leading, endPoint: .trailing),
                         style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round, dash: [8, 6])
                     )
             }
@@ -330,31 +336,34 @@ struct MainMapView: View {
                 .annotationTitles(.hidden)
             }
 
-            ForEach(appState.visibleFriendLocations) { item in
-                Annotation(item.profile.displayName, coordinate: displayCoordinate(for: item.location.location), anchor: .bottom) {
-                    Button {
-                        HapticManager.shared.tap()
-                        if appState.isDemoFriend(item.profile.id) {
-                            if appState.syncShotCandidates.contains(where: { $0.id == item.profile.id }) {
-                                Task { await appState.startSyncShot(with: item.profile) }
-                            }
-                        } else {
-                            appState.openProfile(item.profile)
+            ForEach(appState.friendGroupsOnMap) { group in
+                Annotation(group.profiles.map(\.displayName).joined(separator: ", "), coordinate: group.location.coordinate, anchor: .bottom) {
+                    if group.profiles.count == 1, let friend = group.profiles.first {
+                        Button {
+                            openFriend(friend)
+                        } label: {
+                            FriendGroupAnnotationView(users: group.profiles, updatedAt: group.updatedAt, onlineIDs: onlineIDs(for: group.profiles))
                         }
-                    } label: {
-                        FriendLocationAnnotationView(
-                            user: item.profile,
-                            updatedAt: item.location.updatedAt,
-                            isOnline: appState.isOnline(item.profile.id)
-                        )
+                        .buttonStyle(PressableButtonStyle())
+                    } else {
+                        Menu {
+                            ForEach(group.profiles) { friend in
+                                Button {
+                                    openFriend(friend)
+                                } label: {
+                                    Text(verbatim: friend.displayName)
+                                }
+                            }
+                        } label: {
+                            FriendGroupAnnotationView(users: group.profiles, updatedAt: group.updatedAt, onlineIDs: onlineIDs(for: group.profiles))
+                        }
                     }
-                    .buttonStyle(PressableButtonStyle())
                 }
                 .annotationTitles(.hidden)
             }
 
             ForEach(appState.visibleCapsules) { capsule in
-                Annotation("", coordinate: displayCoordinate(for: capsule.location), anchor: .bottom) {
+                Annotation("", coordinate: capsule.coordinate, anchor: .bottom) {
                     Button {
                         HapticManager.shared.tap()
                         appState.presentedCapsule = capsule
@@ -397,6 +406,8 @@ struct MainMapView: View {
                         place: appState.currentPlace,
                         since: appState.presenceSince,
                         speed: currentSpeed,
+                        companions: appState.companions,
+                        onlineIDs: onlineIDs(for: appState.companions),
                         onOpenPhoto: { _ in openOwnPins(ownPins) }
                     )
                 }
@@ -405,12 +416,14 @@ struct MainMapView: View {
         }
         .mapStyle(mapStyle)
         .mapControls {}
-        .onMapCameraChange(frequency: .onEnd) { context in
-            mapCenter = GeoPoint(context.region.center)
+        .onMapCameraChange(frequency: .continuous) { context in
             mapHeading = context.camera.heading
             if mapHeight > 0 {
                 metersPerPoint = context.region.span.latitudeDelta * 111_320 / Double(mapHeight)
             }
+        }
+        .onMapCameraChange(frequency: .onEnd) { context in
+            mapCenter = GeoPoint(context.region.center)
             let shouldShowGlobe = context.camera.distance > Self.globeAltitude
             if shouldShowGlobe != isGlobeMode {
                 withAnimation(.easeInOut(duration: 0.45)) {

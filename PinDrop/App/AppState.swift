@@ -1,3 +1,4 @@
+import MapKit
 import Observation
 import SwiftUI
 import WidgetKit
@@ -52,6 +53,28 @@ struct FriendOnMap: Identifiable, Hashable {
     let location: FriendLocation
 
     var id: UUID { profile.id }
+}
+
+/// Friends standing together, drawn as one bubble of small side-by-side avatars.
+struct FriendGroupOnMap: Identifiable, Hashable {
+    let members: [FriendOnMap]
+
+    var id: String {
+        members.map(\.profile.id.uuidString).sorted().joined(separator: "|")
+    }
+
+    var profiles: [UserProfile] {
+        members.map(\.profile)
+    }
+
+    /// Where the bubble is drawn: the most recently updated member.
+    var location: GeoPoint {
+        (members.max { $0.location.updatedAt < $1.location.updatedAt } ?? members[0]).location.location
+    }
+
+    var updatedAt: Date {
+        members.map(\.location.updatedAt).max() ?? .now
+    }
 }
 
 /// Global observable state for the signed-in session: profile, friends, pins, clusters,
@@ -142,6 +165,11 @@ final class AppState {
     @ObservationIgnored private var lastCrossPathDetection: Date?
     @ObservationIgnored private var hasLoadedCrossPaths = false
     @ObservationIgnored private var dismissedSyncInviteIDs: Set<UUID> = []
+    /// Your evening trail following the streets (walking/driving directions between pins).
+    private(set) var myRoutePoints: [GeoPoint] = []
+    @ObservationIgnored private var routeCache: [String: [GeoPoint]] = [:]
+    @ObservationIgnored private var routeTask: Task<Void, Never>?
+    @ObservationIgnored private var routedPinIDs: [UUID] = []
     nonisolated static let demoDefaultsKey = "pindrop.demo.enabled"
 
     let dataService: SupabaseDataService
@@ -1262,6 +1290,7 @@ final class AppState {
 
     private func recomputeClusters() {
         clusters = GeoClustering.cluster(mapPins)
+        updateMyRoute()
     }
 
     /// Live pins drawn on the map: each Sync Shot appears once (your half when you took part).
@@ -1382,7 +1411,7 @@ extension AppState {
 
     /// Statistics of your evening for the Recap.
     var recapSummary: TrailSummary {
-        TrailSummary.make(pins: activePins, currentUserID: currentUser.id, crossPaths: crossPaths)
+        TrailSummary.make(pins: activePins, currentUserID: currentUser.id, crossPaths: crossPaths, routePoints: myRoutePoints)
     }
 
     // MARK: Sfiorati
@@ -1932,5 +1961,106 @@ extension AppState {
             try? await Task.sleep(for: .milliseconds(450))
             self?.focusMap(on: event.location, spanMeters: 520)
         }
+    }
+}
+
+// MARK: - Groups on the map & street-following trail
+
+extension AppState {
+    /// Friends this close to each other (or to you) are "together".
+    nonisolated static let togetherDistance: Double = 35
+
+    /// Friends standing with you right now: drawn next to your avatar.
+    var companions: [UserProfile] {
+        guard let me = userLocation else { return [] }
+        let freshness = Date.now.addingTimeInterval(-600)
+        return visibleFriendLocations
+            .filter { $0.location.updatedAt > freshness && GeoClustering.haversineDistance(from: me, to: $0.location.location) <= Self.togetherDistance }
+            .map(\.profile)
+    }
+
+    /// Other friends on the map, grouped when they stand together.
+    var friendGroupsOnMap: [FriendGroupOnMap] {
+        let companionIDs = Set(companions.map(\.id))
+        let remaining = visibleFriendLocations.filter { !companionIDs.contains($0.profile.id) }
+        var groups: [[FriendOnMap]] = []
+        for friend in remaining {
+            if let index = groups.firstIndex(where: { group in
+                group.contains { GeoClustering.haversineDistance(from: $0.location.location, to: friend.location.location) <= Self.togetherDistance }
+            }) {
+                groups[index].append(friend)
+            } else {
+                groups.append([friend])
+            }
+        }
+        return groups.map { FriendGroupOnMap(members: $0) }
+    }
+
+    /// Your trail (oldest pin first), following the streets once directions are loaded.
+    var myTrailPoints: [GeoPoint] {
+        if !myRoutePoints.isEmpty { return myRoutePoints }
+        return myTrailPins.map(\.location)
+    }
+
+    private var myTrailPins: [PhotoPin] {
+        activePins
+            .filter { isOwn($0) }
+            .sorted { $0.createdAt < $1.createdAt }
+    }
+
+    /// Recomputes the street route between your pins when they change.
+    fileprivate func updateMyRoute() {
+        let pins = myTrailPins
+        let ids = pins.map(\.id)
+        guard ids != routedPinIDs else { return }
+        routedPinIDs = ids
+        routeTask?.cancel()
+        guard pins.count >= 2 else {
+            myRoutePoints = []
+            return
+        }
+        let stops = pins.map(\.location)
+        routeTask = Task { [weak self] in
+            var points: [GeoPoint] = []
+            for index in stops.indices.dropFirst() {
+                let from = stops[index - 1]
+                let to = stops[index]
+                let key = String(format: "%.5f,%.5f>%.5f,%.5f", from.latitude, from.longitude, to.latitude, to.longitude)
+                var segment = self?.routeCache[key]
+                if segment == nil {
+                    segment = await Self.streetRoute(from: from, to: to)
+                    if Task.isCancelled { return }
+                    self?.routeCache[key] = segment
+                }
+                let resolved = segment ?? [from, to]
+                points.append(contentsOf: points.isEmpty ? resolved : Array(resolved.dropFirst()))
+            }
+            guard !Task.isCancelled, let self else { return }
+            withAnimation(Theme.spring) {
+                self.myRoutePoints = points
+            }
+        }
+    }
+
+    /// Walking directions between two pins (driving when they are far apart).
+    nonisolated static func streetRoute(from: GeoPoint, to: GeoPoint) async -> [GeoPoint]? {
+        let distance = GeoClustering.haversineDistance(from: from, to: to)
+        guard distance > 25 else { return [from, to] }
+        let request = MKDirections.Request()
+        request.source = MKMapItem(placemark: MKPlacemark(coordinate: from.coordinate))
+        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: to.coordinate))
+        request.transportType = distance > 4_000 ? .automobile : .walking
+        guard let response = try? await MKDirections(request: request).calculate(),
+              let route = response.routes.first else { return nil }
+        let polyline = route.polyline
+        let count = polyline.pointCount
+        guard count >= 2 else { return nil }
+        let mapPoints = polyline.points()
+        var result: [GeoPoint] = [from]
+        for index in 0..<count {
+            result.append(GeoPoint(mapPoints[index].coordinate))
+        }
+        result.append(to)
+        return result
     }
 }

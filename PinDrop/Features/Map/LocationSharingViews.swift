@@ -4,38 +4,65 @@ import SwiftUI
 
 // MARK: - Friend on the map
 
-/// A friend's live position on the map (no environment access: annotation content).
-struct FriendLocationAnnotationView: View {
-    let user: UserProfile
+/// Friends on the map: one small avatar, or several side by side when they stand together
+/// (annotation content: no environment access).
+struct FriendGroupAnnotationView: View {
+    let users: [UserProfile]
     let updatedAt: Date
-    let isOnline: Bool
+    let onlineIDs: Set<UUID>
+
+    private let avatarSize: CGFloat = 28
+
+    private var isAnyoneOnline: Bool {
+        users.contains { onlineIDs.contains($0.id) }
+    }
 
     var body: some View {
         VStack(spacing: 4) {
-            AvatarBadge(user: user, size: 40)
-                .padding(3)
-                .background(Circle().fill(isOnline ? Theme.emerald : Color.white))
-                .shadow(color: (isOnline ? Theme.emerald : Color.black).opacity(0.5), radius: 8)
+            HStack(spacing: -7) {
+                ForEach(users.prefix(5)) { user in
+                    AvatarBadge(user: user, size: avatarSize)
+                        .padding(2)
+                        .background(Circle().fill(onlineIDs.contains(user.id) ? Theme.emerald : Color.white))
+                }
+                if users.count > 5 {
+                    Text(verbatim: "+\(users.count - 5)")
+                        .font(Theme.roundedFixed(11, weight: .heavy))
+                        .foregroundStyle(Color.white)
+                        .frame(width: avatarSize + 4, height: avatarSize + 4)
+                        .background(Circle().fill(Theme.accentGradient))
+                }
+            }
+            .padding(users.count > 1 ? 3 : 0)
+            .background {
+                if users.count > 1 {
+                    Capsule().fill(Color.black.opacity(0.35))
+                }
+            }
+            .shadow(color: (isAnyoneOnline ? Theme.emerald : Color.black).opacity(0.45), radius: 6)
+
             TimelineView(.periodic(from: .now, by: 60)) { context in
                 HStack(spacing: 4) {
-                    if isOnline {
+                    if isAnyoneOnline {
                         Circle()
                             .fill(Theme.emerald)
-                            .frame(width: 6, height: 6)
+                            .frame(width: 5, height: 5)
                     }
-                    Text(verbatim: user.firstName)
-                    if !isOnline {
+                    Text(verbatim: users.count > 2
+                        ? "\(users[0].firstName) +\(users.count - 1)"
+                        : users.map(\.firstName).joined(separator: " & "))
+                    if !isAnyoneOnline {
                         Text(verbatim: "·")
                             .foregroundStyle(Theme.textSecondary)
                         Text(verbatim: LocaleFormatter.relativeTimestamp(updatedAt, relativeTo: context.date))
                             .foregroundStyle(Theme.textSecondary)
                     }
                 }
-                .font(Theme.roundedFixed(10, weight: .bold))
+                .font(Theme.roundedFixed(9, weight: .bold))
                 .foregroundStyle(Theme.textPrimary)
                 .lineLimit(1)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
                 .glassCapsule()
                 .fixedSize()
             }

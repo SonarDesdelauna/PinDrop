@@ -13,11 +13,14 @@ struct MyLocationAnnotationView: View {
     let place: SavedPlace?
     let since: Date?
     let speed: Double?
+    /// Friends standing with you, drawn side by side next to your avatar (like Bump).
+    var companions: [UserProfile] = []
+    var onlineIDs: Set<UUID> = []
     let onOpenPhoto: (PhotoPin) -> Void
 
     @State private var isPulsing = false
 
-    private let avatarSize: CGFloat = 44
+    private let avatarSize: CGFloat = 34
     private var ringSize: CGFloat { avatarSize + 14 }
 
     var body: some View {
@@ -25,7 +28,7 @@ struct MyLocationAnnotationView: View {
             ZStack {
                 Circle()
                     .fill(Theme.emerald.opacity(0.25))
-                    .frame(width: 72, height: 72)
+                    .frame(width: 56, height: 56)
                     .scaleEffect(isPulsing ? 1.25 : 0.85)
                     .opacity(isPulsing ? 0 : 0.9)
 
@@ -41,13 +44,35 @@ struct MyLocationAnnotationView: View {
                     .background(Circle().fill(Color.white))
                     .shadow(color: Theme.emerald.opacity(0.6), radius: 10)
             }
-            .frame(width: 72, height: 72)
+            .frame(width: 56, height: 56)
+            .overlay(alignment: .trailing) {
+                if !companions.isEmpty {
+                    HStack(spacing: -7) {
+                        ForEach(companions.prefix(4)) { friend in
+                            AvatarBadge(user: friend, size: 28)
+                                .padding(2)
+                                .background(Circle().fill(onlineIDs.contains(friend.id) ? Theme.emerald : Color.white))
+                        }
+                        if companions.count > 4 {
+                            Text(verbatim: "+\(companions.count - 4)")
+                                .font(Theme.roundedFixed(10, weight: .heavy))
+                                .foregroundStyle(Color.white)
+                                .frame(width: 32, height: 32)
+                                .background(Circle().fill(Theme.accentGradient))
+                        }
+                    }
+                    .shadow(color: Color.black.opacity(0.4), radius: 5)
+                    .fixedSize()
+                    .alignmentGuide(HorizontalAlignment.trailing) { dimensions in dimensions[.leading] + 6 }
+                    .transition(.scale.combined(with: .opacity))
+                }
+            }
             .overlay(alignment: .topTrailing) {
                 if let ownPin {
                     Button {
                         onOpenPhoto(ownPin)
                     } label: {
-                        PinThumbnail(pin: ownPin, image: ownThumbnail, size: 32, isLocked: false)
+                        PinThumbnail(pin: ownPin, image: ownThumbnail, size: 26, isLocked: false)
                             .shadow(color: Color.black.opacity(0.45), radius: 5, x: 0, y: 3)
                             .overlay(alignment: .topTrailing) {
                                 if extraPhotoCount > 0 {

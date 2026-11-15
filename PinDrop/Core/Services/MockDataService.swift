@@ -221,22 +221,18 @@ enum MockDataService {
             cg.scaleBy(x: -1, y: 1)
             source.draw(in: CGRect(origin: .zero, size: size))
             cg.restoreGState()
-            let colors = [
-                UIColor(red: 0.06, green: 0.73, blue: 0.51, alpha: 0.35).cgColor,
-                UIColor(red: 0.49, green: 0.23, blue: 0.93, alpha: 0.35).cgColor
-            ] as CFArray
-            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1]) {
-                cg.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: size.width, y: size.height), options: [])
-            }
             let label = NSAttributedString(
-                string: "POV · \(partnerName)",
+                string: "DEMO · \(partnerName)",
                 attributes: [
-                    .font: roundedFont(size: size.width * 0.06, weight: .heavy),
+                    .font: roundedFont(size: size.width * 0.035, weight: .bold),
                     .foregroundColor: UIColor.white
                 ]
             )
             let labelSize = label.size()
-            label.draw(at: CGPoint(x: (size.width - labelSize.width) / 2, y: size.height * 0.08))
+            let pill = CGRect(x: size.width * 0.04, y: size.height * 0.04, width: labelSize.width + 40, height: labelSize.height + 20)
+            UIColor.black.withAlphaComponent(0.45).setFill()
+            UIBezierPath(roundedRect: pill, cornerRadius: pill.height / 2).fill()
+            label.draw(at: CGPoint(x: pill.minX + 20, y: pill.minY + 10))
         }
         guard let data = image.jpegData(compressionQuality: 0.9) else { return nil }
         return ImageCompressor.process(data)
