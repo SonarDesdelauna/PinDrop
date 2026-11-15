@@ -40,6 +40,7 @@ jobs:
       - name: Build app (Release, iphoneos, no code signing)
         run: |
           set -o pipefail
+          mkdir -p build
           xcodebuild \
             -project PinDrop.xcodeproj \
             -scheme PinDrop \
