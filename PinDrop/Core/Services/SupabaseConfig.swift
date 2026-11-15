@@ -4,8 +4,8 @@ import Supabase
 /// Supabase project configuration. The key is the public (publishable / anon) client key:
 /// every table and bucket is protected by Row Level Security on the server.
 enum SupabaseConfig {
-    static let url = URL(string: "https://PROJECT_REF.supabase.co")!
-    static let publishableKey = "PUBLISHABLE_KEY"
+    static let url = URL(string: "https://tqtpkdxeedcjmlhabimg.supabase.co")!
+    static let publishableKey = "sb_publishable_jfZKfM7CgDgII_FZCmv5Tw_XLxNpTco"
 
     /// Deep link used by confirmation and password-reset emails.
     static let authRedirectURL = URL(string: "pindrop://auth-callback")!
