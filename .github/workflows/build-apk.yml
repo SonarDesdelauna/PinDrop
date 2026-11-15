@@ -1,0 +1,76 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "android/**"
+      - ".github/workflows/build-apk.yml"
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: android/src-tauri
+
+      - name: Tools
+        run: |
+          echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+          npm install -g @tauri-apps/cli@2
+
+      - name: Vendor Leaflet
+        run: |
+          mkdir -p android/ui/vendor
+          curl -fsSL https://unpkg.com/leaflet@1.9.4/dist/leaflet.js -o android/ui/vendor/leaflet.js
+          curl -fsSL https://unpkg.com/leaflet@1.9.4/dist/leaflet.css -o android/ui/vendor/leaflet.css
+
+      - name: Init Android project
+        working-directory: android/src-tauri
+        run: |
+          tauri android init --ci
+          tauri icon app-icon.png
+          MANIFEST=gen/android/app/src/main/AndroidManifest.xml
+          sed -i '0,/<application/s//<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" \/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" \/>\n    <uses-feature android:name="android.hardware.location.gps" android:required="false" \/>\n    <application/' "$MANIFEST"
+          cat "$MANIFEST"
+
+      - name: Build APK
+        working-directory: android/src-tauri
+        run: tauri android build --apk --ci --target aarch64 armv7
+
+      - name: Sign APK
+        run: |
+          UNSIGNED=$(find android/src-tauri/gen/android -name "*release-unsigned.apk" | head -n1)
+          echo "Unsigned: $UNSIGNED"
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n1)
+          PASS=$(openssl rand -hex 16)
+          keytool -genkeypair -keystore pindrop.p12 -storetype PKCS12 -storepass "$PASS" -keypass "$PASS" \
+            -alias pindrop -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=PinDrop"
+          "$BT/zipalign" -f -p 4 "$UNSIGNED" aligned.apk
+          mkdir -p out
+          "$BT/apksigner" sign --ks pindrop.p12 --ks-pass "pass:$PASS" --ks-key-alias pindrop --out out/PinDrop.apk aligned.apk
+          "$BT/apksigner" verify out/PinDrop.apk
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PinDrop-apk
+          path: out/PinDrop.apk

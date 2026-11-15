@@ -19,3 +19,8 @@ Thumbs.db
 # Secrets / local artifacts
 supabase_db_passw.txt
 dist/
+
+# Android
+android/src-tauri/target/
+android/src-tauri/gen/
+android/ui/vendor/

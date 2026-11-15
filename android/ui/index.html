@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>PinDrop</title>
+  <link rel="stylesheet" href="vendor/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Login / sign up -->
+  <section id="auth" class="screen hidden">
+    <div class="auth-card">
+      <div class="logo">📍</div>
+      <h1>PinDrop</h1>
+      <p class="muted">Scatta, lascia un pin, scopri dove sono i tuoi amici.</p>
+      <input id="email" type="email" placeholder="Email" autocomplete="email">
+      <input id="password" type="password" placeholder="Password" autocomplete="current-password">
+      <button id="authSubmit" class="primary">Accedi</button>
+      <button id="authToggle" class="link">Non hai un account? Registrati</button>
+      <button id="authReset" class="link small">Password dimenticata?</button>
+      <p id="authMsg" class="msg"></p>
+    </div>
+  </section>
+
+  <!-- First profile setup -->
+  <section id="setup" class="screen hidden">
+    <div class="auth-card">
+      <div class="logo">👋</div>
+      <h1>Il tuo profilo</h1>
+      <p class="muted">Gli amici ti troveranno con il tuo username.</p>
+      <input id="displayName" type="text" placeholder="Nome" maxlength="40">
+      <input id="username" type="text" placeholder="username" maxlength="24" autocapitalize="none" autocomplete="off">
+      <button id="setupSubmit" class="primary">Continua</button>
+      <p id="setupMsg" class="msg"></p>
+    </div>
+  </section>
+
+  <!-- Map -->
+  <section id="main" class="screen hidden">
+    <div id="map"></div>
+    <div class="topbar">
+      <div id="lockPill" class="pill"></div>
+      <button id="logoutBtn" class="round" title="Esci">⎋</button>
+    </div>
+    <div class="dock">
+      <button id="friendsBtn" class="round big-side">👥<span id="reqBadge" class="badge hidden"></span></button>
+      <label class="shutter" for="photoInput"><span></span></label>
+      <input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
+      <button id="centerBtn" class="round big-side">◎</button>
+    </div>
+  </section>
+
+  <!-- Friends sheet -->
+  <div id="friendsSheet" class="sheet hidden">
+    <div class="sheet-card">
+      <div class="sheet-head">
+        <h2>Amici</h2>
+        <button class="round close" data-close="friendsSheet">✕</button>
+      </div>
+      <div class="row">
+        <input id="addFriend" type="text" placeholder="Username o codice invito" autocapitalize="none">
+        <button id="addFriendBtn" class="primary small">Aggiungi</button>
+      </div>
+      <p id="friendMsg" class="msg"></p>
+      <div id="myCode" class="muted small"></div>
+      <h3 id="reqTitle" class="hidden">Richieste</h3>
+      <div id="requests"></div>
+      <h3>I tuoi amici</h3>
+      <div id="friendsList"></div>
+    </div>
+  </div>
+
+  <!-- New pin -->
+  <div id="composer" class="sheet hidden">
+    <div class="sheet-card">
+      <div class="sheet-head">
+        <h2>Nuovo pin</h2>
+        <button class="round close" data-close="composer">✕</button>
+      </div>
+      <img id="preview" alt="">
+      <input id="caption" type="text" maxlength="40" placeholder="Didascalia (opzionale)">
+      <button id="publishBtn" class="primary">Pubblica qui 📍</button>
+      <p class="muted small">Il pin sparisce dopo 6 ore.</p>
+    </div>
+  </div>
+
+  <!-- Pin viewer -->
+  <div id="viewer" class="sheet hidden">
+    <div class="sheet-card viewer-card">
+      <div class="sheet-head">
+        <div id="viewerAuthor" class="author"></div>
+        <button class="round close" data-close="viewer">✕</button>
+      </div>
+      <img id="viewerImg" alt="">
+      <p id="viewerCaption"></p>
+      <div id="viewerReactions" class="reactions"></div>
+      <p id="viewerMeta" class="muted small"></p>
+      <button id="deletePinBtn" class="danger hidden">Elimina pin</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="vendor/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
