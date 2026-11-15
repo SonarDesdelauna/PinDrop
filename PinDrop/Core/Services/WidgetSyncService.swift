@@ -170,7 +170,7 @@ final class WidgetSyncService {
 
     private init() {}
 
-    func sync(pins: [PhotoPin], currentUserID: UUID, isUnlocked: Bool, userLocation: GeoPoint?) {
+    func sync(pins: [PhotoPin], thumbnails: [UUID: Data], currentUserID: UUID, isUnlocked: Bool, userLocation: GeoPoint?) {
         let now = Date.now
         let activePins = pins.filter { !$0.isExpired(at: now) }
         let ownPin = activePins
@@ -183,7 +183,7 @@ final class WidgetSyncService {
         let entries = friendPins.prefix(maxEntries).map { pin in
             WidgetPayload.PinEntry(
                 id: pin.id.uuidString,
-                authorName: pin.author.username,
+                authorName: pin.author.displayName,
                 initials: pin.author.initials,
                 avatarColorHex: pin.author.avatarColorHex,
                 placeName: pin.placeName,
@@ -191,7 +191,7 @@ final class WidgetSyncService {
                 createdAt: pin.createdAt,
                 expiresAt: pin.expiresAt,
                 distanceMeters: userLocation.map { GeoClustering.haversineDistance(from: $0, to: pin.location) },
-                thumbnail: pin.thumbnailData
+                thumbnail: thumbnails[pin.id]
             )
         }
 
@@ -215,6 +215,13 @@ final class WidgetSyncService {
         } catch {
             lastWrittenPayload = nil
         }
+    }
+
+    /// Removes every user-specific entry from the widget (sign-out).
+    func clear() {
+        lastWrittenPayload = nil
+        try? WidgetStore.write(.empty)
+        WidgetCenter.shared.reloadTimelines(ofKind: AppGroup.widgetKind)
     }
 }
 #endif

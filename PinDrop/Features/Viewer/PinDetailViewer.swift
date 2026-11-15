@@ -116,7 +116,7 @@ struct PinDetailViewer: View {
                     Text("pin.you")
                         .font(Theme.text(.headline, weight: .bold))
                 } else {
-                    Text(verbatim: pin.author.username)
+                    Text(verbatim: pin.author.displayName)
                         .font(Theme.text(.headline, weight: .bold))
                 }
                 HStack(spacing: 4) {
@@ -150,7 +150,8 @@ struct PinDetailViewer: View {
         Color.clear
             .aspectRatio(3.0 / 4.0, contentMode: .fit)
             .overlay {
-                if let image = ImageCache.image(forKey: "full-\(pin.id.uuidString)", data: pin.imageData) {
+                if let source = appState.fullImage(for: pin),
+                   let image = ImageCache.image(forKey: source.key, data: source.data) {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
@@ -201,8 +202,11 @@ struct PinDetailViewer: View {
             }
             .matchedGeometryEffect(id: HeroID.active(pin.id), in: namespace, isSource: true)
             .animation(Theme.spring, value: isLocked)
+            .task(id: "\(pin.id.uuidString)-\(isLocked)") {
+                await appState.loadFullImage(for: pin)
+            }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Text(verbatim: pin.caption.isEmpty ? pin.author.username : pin.caption))
+            .accessibilityLabel(Text(verbatim: pin.caption.isEmpty ? pin.author.displayName : pin.caption))
     }
 
     private func expiryChip(for pin: PhotoPin) -> some View {

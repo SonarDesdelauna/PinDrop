@@ -6,14 +6,11 @@ import SwiftUI
 struct OnboardingView: View {
     let onFinish: () -> Void
 
-    @Environment(AppState.self) private var appState
     @Environment(LocationService.self) private var locationService
 
     @State private var step = 0
     @State private var cameraStatus: AVAuthorizationStatus = .notDetermined
-    @State private var displayName = ""
     @State private var isFinishing = false
-    @FocusState private var isNameFocused: Bool
 
     private let lastStep = 2
 
@@ -64,7 +61,6 @@ struct OnboardingView: View {
         }
         .onChange(of: step) { _, _ in
             HapticManager.shared.selection()
-            isNameFocused = false
         }
     }
 
@@ -229,32 +225,10 @@ struct OnboardingView: View {
                         requestLocation()
                     }
                 }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("onboarding.name.title")
-                        .font(Theme.text(.subheadline, weight: .semibold))
-                        .foregroundStyle(Theme.textSecondary)
-                    TextField("onboarding.name.placeholder", text: $displayName)
-                        .font(Theme.text(.body, weight: .medium))
-                        .foregroundStyle(Theme.textPrimary)
-                        .textInputAutocapitalization(.words)
-                        .autocorrectionDisabled()
-                        .submitLabel(.done)
-                        .focused($isNameFocused)
-                        .onSubmit { isNameFocused = false }
-                        .padding(14)
-                        .glassCard(cornerRadius: Theme.Radius.control)
-                        .onChange(of: displayName) { _, newValue in
-                            if newValue.count > 32 {
-                                displayName = String(newValue.prefix(32))
-                            }
-                        }
-                }
             }
             .padding(.bottom, 12)
         }
         .scrollIndicators(.hidden)
-        .scrollDismissesKeyboard(.interactively)
     }
 
     private var cameraPermissionState: PermissionState {
@@ -357,16 +331,8 @@ struct OnboardingView: View {
     private func finish() {
         guard !isFinishing else { return }
         isFinishing = true
-        isNameFocused = false
-        let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        Task {
-            if !name.isEmpty {
-                await appState.updateDisplayName(name)
-            }
-            HapticManager.shared.success()
-            await appState.refresh()
-            isFinishing = false
-            onFinish()
-        }
+        HapticManager.shared.success()
+        isFinishing = false
+        onFinish()
     }
 }

@@ -108,6 +108,9 @@ final class CaptureEngine: NSObject, @unchecked Sendable {
                     settings.flashMode = flashMode
                 }
                 settings.photoQualityPrioritization = .balanced
+                // Re-apply portrait rotation right before every shot: the connection can be
+                // recreated by the session after reconfiguration, losing the angle.
+                self.configurePhotoConnection(position: self.currentInput?.device.position ?? .back)
                 let identifier = settings.uniqueID
                 let processor = PhotoCaptureProcessor(continuation: continuation) {
                     self.queue.async {

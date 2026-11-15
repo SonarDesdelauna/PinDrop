@@ -1,10 +1,12 @@
 import UIKit
 import ImageIO
 
-/// Output of the capture pipeline: a 3:4 portrait JPEG and a square thumbnail.
+/// Output of the capture pipeline: a 3:4 portrait JPEG, a square thumbnail and a
+/// pre-blurred preview (the only variant friends can download while their map is locked).
 struct ProcessedImage: Sendable, Equatable {
     let fullData: Data
     let thumbnailData: Data
+    let blurData: Data
     let pixelWidth: Int
     let pixelHeight: Int
 }
@@ -17,17 +19,24 @@ enum ImageCompressor {
     static let fullQuality: CGFloat = 0.82
     static let thumbnailQuality: CGFloat = 0.72
     static let portraitAspect: CGFloat = 3.0 / 4.0
+    static let blurSourceEdge: CGFloat = 12
+    static let blurOutputEdge: CGFloat = 96
 
     /// Decodes raw camera data (HEIC/JPEG), normalizes orientation, crops to 3:4 and compresses.
     static func process(_ data: Data) -> ProcessedImage? {
         guard let decoded = downsample(data, maxPixelSize: fullLongEdge * 1.5) else { return nil }
-        let full = cropAndResize(decoded, aspect: portraitAspect, longEdge: fullLongEdge)
+        // Live captures are always portrait: a landscape buffer means the sensor orientation
+        // was not applied, so rotate it upright before cropping.
+        let upright = decoded.size.width > decoded.size.height ? rotateClockwise(decoded) : decoded
+        let full = cropAndResize(upright, aspect: portraitAspect, longEdge: fullLongEdge)
         guard let fullData = full.jpegData(compressionQuality: fullQuality) else { return nil }
         let thumbnail = cropAndResize(full, aspect: 1, longEdge: thumbnailEdge)
         guard let thumbnailData = thumbnail.jpegData(compressionQuality: thumbnailQuality) else { return nil }
+        guard let blurData = blurredPreview(of: thumbnail).jpegData(compressionQuality: 0.6) else { return nil }
         return ProcessedImage(
             fullData: fullData,
             thumbnailData: thumbnailData,
+            blurData: blurData,
             pixelWidth: Int(full.size.width),
             pixelHeight: Int(full.size.height)
         )
@@ -45,6 +54,38 @@ enum ImageCompressor {
         ] as CFDictionary
         guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions) else { return nil }
         return UIImage(cgImage: cgImage, scale: 1, orientation: .up)
+    }
+
+    /// Rotates an image 90° clockwise.
+    static func rotateClockwise(_ image: UIImage) -> UIImage {
+        let size = image.size
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size.height, height: size.width), format: format)
+        return renderer.image { context in
+            let cg = context.cgContext
+            cg.translateBy(x: size.height, y: 0)
+            cg.rotate(by: .pi / 2)
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+
+    /// Unrecognizable preview: downscaled to a few pixels, then smoothly upscaled.
+    static func blurredPreview(of image: UIImage) -> UIImage {
+        let tiny = resized(image, to: CGSize(width: blurSourceEdge, height: blurSourceEdge), quality: .medium)
+        return resized(tiny, to: CGSize(width: blurOutputEdge, height: blurOutputEdge), quality: .high)
+    }
+
+    private static func resized(_ image: UIImage, to size: CGSize, quality: CGInterpolationQuality) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        return renderer.image { context in
+            context.cgContext.interpolationQuality = quality
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
     }
 
     /// Center-crops `image` to `aspect` (width / height) and scales it so its long edge is at most `longEdge`.
@@ -80,7 +121,7 @@ enum ImageCompressor {
     }
 }
 
-/// Main-actor cache of decoded images, keyed by pin id and variant.
+/// Main-actor cache of decoded images, keyed by storage path.
 @MainActor
 enum ImageCache {
     private static let cache: NSCache<NSString, UIImage> = {

@@ -43,7 +43,7 @@ struct PinAnnotationView: View {
         .shadow(color: Color.black.opacity(0.45), radius: 10, x: 0, y: 6)
         .animation(Theme.spring, value: isLocked)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: isOwn ? String(localized: "pin.you") : pin.author.username))
+        .accessibilityLabel(Text(verbatim: isOwn ? String(localized: "pin.you") : pin.author.displayName))
         .accessibilityValue(isLocked ? Text("a11y.pin.locked") : Text("a11y.pin.unlocked"))
         .accessibilityAddTraits(.isButton)
     }
@@ -114,15 +114,19 @@ struct ExpiryRing: View {
     }
 }
 
-/// Round photo thumbnail; frosted (blur 18) while the map is locked.
+/// Round photo thumbnail; frosted (blur 18) while the map is locked. While locked only the
+/// server-side pre-blurred preview is ever downloaded.
 struct PinThumbnail: View {
     let pin: PhotoPin
     let size: CGFloat
     let isLocked: Bool
 
+    @Environment(AppState.self) private var appState
+
     var body: some View {
         ZStack {
-            if let image = ImageCache.image(forKey: "thumb-\(pin.id.uuidString)", data: pin.thumbnailData) {
+            if let source = appState.thumbnail(for: pin),
+               let image = ImageCache.image(forKey: source.key, data: source.data) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
@@ -152,17 +156,15 @@ struct AvatarBadge: View {
 
     var body: some View {
         ZStack {
-            if let data = user.avatarImageData,
-               let image = ImageCache.image(forKey: "avatar-\(user.id.uuidString)", data: data) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                let base = Color(hexString: user.avatarColorHex)
-                LinearGradient(colors: [base, base.opacity(0.55)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                Text(verbatim: user.initials)
-                    .font(.system(size: size * 0.38, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.white)
+            initialsView
+            if let url = user.avatarURL {
+                AsyncImage(url: url, transaction: Transaction(animation: .easeOut(duration: 0.2))) { phase in
+                    if let image = phase.image {
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    }
+                }
             }
         }
         .frame(width: size, height: size)
@@ -171,6 +173,16 @@ struct AvatarBadge: View {
             Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 1)
         }
         .accessibilityHidden(true)
+    }
+
+    private var initialsView: some View {
+        let base = Color(hexString: user.avatarColorHex)
+        return ZStack {
+            LinearGradient(colors: [base, base.opacity(0.55)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            Text(verbatim: user.initials)
+                .font(.system(size: size * 0.38, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.white)
+        }
     }
 }
 

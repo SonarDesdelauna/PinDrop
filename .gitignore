@@ -15,3 +15,7 @@ xcuserdata/
 # OS
 .DS_Store
 Thumbs.db
+
+# Secrets / local artifacts
+supabase_db_passw.txt
+dist/

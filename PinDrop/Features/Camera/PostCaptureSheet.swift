@@ -258,8 +258,7 @@ struct PostCaptureSheet: View {
                     processed: shot.processed,
                     location: location,
                     placeName: placeName,
-                    caption: trimmedCaption,
-                    capturedAt: shot.capturedAt
+                    caption: trimmedCaption
                 )
                 isPublishing = false
                 onDropped()

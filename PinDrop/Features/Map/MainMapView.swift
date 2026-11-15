@@ -7,6 +7,9 @@ struct MainMapView: View {
     @Namespace private var heroNamespace
     @State private var cameraPosition: MapCameraPosition = .automatic
     @State private var hasCenteredOnUser = false
+    /// Above this camera altitude the map switches to the photorealistic 3D globe.
+    @State private var isGlobeMode = false
+    private static let globeAltitude: Double = 1_200_000
 
     var body: some View {
         @Bindable var state = appState
@@ -73,9 +76,18 @@ struct MainMapView: View {
                 .annotationTitles(.hidden)
             }
         }
-        .mapStyle(.standard(elevation: .realistic, emphasis: .muted, pointsOfInterest: .excludingAll, showsTraffic: false))
+        .mapStyle(mapStyle)
         .mapControls {
             MapCompass()
+            MapPitchToggle()
+        }
+        .onMapCameraChange(frequency: .continuous) { context in
+            let shouldShowGlobe = context.camera.distance > Self.globeAltitude
+            if shouldShowGlobe != isGlobeMode {
+                withAnimation(.easeInOut(duration: 0.45)) {
+                    isGlobeMode = shouldShowGlobe
+                }
+            }
         }
         .ignoresSafeArea()
     }
@@ -372,6 +384,16 @@ struct MainMapView: View {
             }
         }
         Task { await appState.refreshUserLocation() }
+    }
+
+    /// Muted 3D city map up close; satellite imagery on a realistic globe when zoomed out,
+    /// like Apple Maps.
+    private var mapStyle: MapStyle {
+        if isGlobeMode {
+            .hybrid(elevation: .realistic, pointsOfInterest: .excludingAll, showsTraffic: false)
+        } else {
+            .standard(elevation: .realistic, emphasis: .muted, pointsOfInterest: .excludingAll, showsTraffic: false)
+        }
     }
 
     private func region(around point: GeoPoint, spanMeters: Double) -> MKCoordinateRegion {
