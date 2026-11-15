@@ -41,6 +41,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     @ObservationIgnored private var locationContinuations: [CheckedContinuation<GeoPoint?, Never>] = []
     @ObservationIgnored private var authorizationContinuations: [CheckedContinuation<CLAuthorizationStatus, Never>] = []
     @ObservationIgnored private var timeoutTask: Task<Void, Never>?
+    @ObservationIgnored private var timeoutDeadline: Date?
     @ObservationIgnored private var placeNameCache: [String: String] = [:]
 
     /// Average walking speed used when Apple Maps cannot compute a route (≈ 4.7 km/h).
@@ -78,20 +79,31 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
 
     /// Returns a single, fresh location fix (or a cached one younger than `maximumAge` seconds).
     /// Returns `nil` when location access is not granted or no fix could be obtained.
-    func currentLocation(maximumAge: TimeInterval = 30) async -> GeoPoint? {
+    /// `timeout` caps the wait; on timeout the last known fix (if any) is returned.
+    func currentLocation(maximumAge: TimeInterval = 30, timeout: TimeInterval = 12) async -> GeoPoint? {
         guard isAuthorized else { return nil }
-        if let lastFix, let lastFixDate, Date.now.timeIntervalSince(lastFixDate) <= maximumAge {
-            return lastFix
+        if let lastFix, let lastFixDate {
+            let age = Date.now.timeIntervalSince(lastFixDate)
+            // While live updates run, a missing new fix means you haven't moved (distance
+            // filter), so the last one is still accurate.
+            if age <= maximumAge || (isLiveUpdating && age <= 600) {
+                return lastFix
+            }
         }
         return await withCheckedContinuation { continuation in
             locationContinuations.append(continuation)
-            guard locationContinuations.count == 1 else { return }
-            if !isLiveUpdating {
-                manager.requestLocation()
+            let deadline = Date.now.addingTimeInterval(timeout)
+            if locationContinuations.count == 1 {
+                if !isLiveUpdating {
+                    manager.requestLocation()
+                }
+            } else if let timeoutDeadline, timeoutDeadline <= deadline {
+                return
             }
+            timeoutDeadline = deadline
             timeoutTask?.cancel()
             timeoutTask = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(12))
+                try? await Task.sleep(for: .seconds(timeout))
                 guard !Task.isCancelled else { return }
                 self?.resolveLocationRequests(with: nil)
             }
@@ -131,6 +143,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         }
         timeoutTask?.cancel()
         timeoutTask = nil
+        timeoutDeadline = nil
         let result = point ?? lastFix
         let pending = locationContinuations
         locationContinuations.removeAll()

@@ -338,7 +338,7 @@ struct CameraStudioView: View {
         Task {
             // Photo and GPS fix are acquired together, at the very instant of the shot.
             async let photoData = camera.capturePhoto()
-            async let locationFix = locationService.currentLocation(maximumAge: 5)
+            async let locationFix = locationService.currentLocation(maximumAge: 20, timeout: 1.5)
 
             do {
                 let rawData = try await photoData

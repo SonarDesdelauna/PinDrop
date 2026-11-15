@@ -107,7 +107,7 @@ private struct SessionView: View {
         Group {
             switch appState.sessionPhase {
             case .idle, .loading:
-                SplashView()
+                SplashView(message: "session.loading")
             case .failed(let message):
                 SessionErrorView(message: message)
             case .ready:
@@ -130,6 +130,8 @@ private struct SessionView: View {
 
 /// Branded loading screen.
 struct SplashView: View {
+    var message: LocalizedStringKey?
+
     var body: some View {
         VStack(spacing: 18) {
             AppLogoView(size: 104)
@@ -137,6 +139,11 @@ struct SplashView: View {
                 .pulsing()
             ProgressView()
                 .tint(Theme.neonPurple)
+            if let message {
+                Text(message)
+                    .font(Theme.text(.subheadline, weight: .semibold))
+                    .foregroundStyle(Theme.textSecondary)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.obsidian.ignoresSafeArea())

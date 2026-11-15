@@ -100,6 +100,7 @@ final class AppState {
     @ObservationIgnored private var sessionUserID: UUID?
     @ObservationIgnored private var refreshQueued = false
     @ObservationIgnored private var housekeepingTask: Task<Void, Never>?
+    @ObservationIgnored private var startTask: Task<Void, Never>?
     @ObservationIgnored private var toastDismissTask: Task<Void, Never>?
     @ObservationIgnored private var placeLookupsInFlight: Set<String> = []
     @ObservationIgnored private var imageLoadsInFlight: Set<String> = []
@@ -547,21 +548,43 @@ final class AppState {
     // MARK: - Session lifecycle
 
     /// Loads the signed-in user's profile and content. Called when Auth reports a session.
+    /// Loads the session. The work runs in its own task, so views being rebuilt (for example
+    /// when the accent color changes) can never cancel it halfway. Network hiccups at launch
+    /// are retried silently before showing an error.
     func start(userID: UUID) async {
-        if sessionUserID == userID, sessionPhase == .ready { return }
-        if sessionUserID != userID {
+        if sessionUserID == userID, sessionPhase == .ready || startTask != nil { return }
+        if let previous = sessionUserID, previous != userID {
             reset()
         }
         sessionUserID = userID
         sessionPhase = .loading
         HapticManager.shared.prepare()
-        do {
-            currentUser = try await dataService.currentProfile()
-            applyAccent(currentUser.avatarColorHex)
-            sessionPhase = .ready
-            loadPresence()
-        } catch {
-            sessionPhase = .failed(error.localizedDescription)
+        startTask = Task { [weak self] in
+            await self?.performStart(userID: userID)
+            self?.startTask = nil
+        }
+    }
+
+    private func performStart(userID: UUID) async {
+        var lastError: Error?
+        for attempt in 0..<4 {
+            guard sessionUserID == userID else { return }
+            do {
+                let profile = try await dataService.currentProfile()
+                guard sessionUserID == userID else { return }
+                currentUser = profile
+                sessionPhase = .ready
+                loadPresence()
+                applyAccent(profile.avatarColorHex)
+                lastError = nil
+                break
+            } catch {
+                lastError = error
+                try? await Task.sleep(for: .milliseconds(600 * (attempt + 1)))
+            }
+        }
+        if let lastError {
+            sessionPhase = .failed(lastError.localizedDescription)
             return
         }
         await refresh()
@@ -594,6 +617,8 @@ final class AppState {
         applyAccent(AccentStore.defaultHex)
         housekeepingTask?.cancel()
         housekeepingTask = nil
+        startTask?.cancel()
+        startTask = nil
         sessionUserID = nil
         sessionPhase = .idle
         currentUser = .placeholder
