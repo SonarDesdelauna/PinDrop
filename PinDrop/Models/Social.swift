@@ -136,6 +136,38 @@ struct FriendTime: Decodable, Hashable, Sendable {
     }
 }
 
+/// A friend's last shared position (`public.live_locations`).
+struct FriendLocation: Decodable, Hashable, Sendable {
+    let userID: UUID
+    let latitude: Double
+    let longitude: Double
+    let updatedAt: Date
+    let permission: String
+
+    enum CodingKeys: String, CodingKey {
+        case userID = "user_id"
+        case latitude
+        case longitude
+        case updatedAt = "updated_at"
+        case permission
+    }
+
+    var location: GeoPoint {
+        GeoPoint(latitude: latitude, longitude: longitude)
+    }
+}
+
+/// A friend's location permission (`public.location_permissions`).
+struct LocationPermissionRow: Decodable, Hashable, Sendable {
+    let userID: UUID
+    let permission: String
+
+    enum CodingKeys: String, CodingKey {
+        case userID = "user_id"
+        case permission
+    }
+}
+
 /// A row returned by `suggested_friends`.
 struct SuggestionRow: Decodable, Hashable, Sendable {
     let profileID: UUID

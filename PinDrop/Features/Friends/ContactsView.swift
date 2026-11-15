@@ -441,7 +441,7 @@ struct ContactsView: View {
         loadState = .loaded
     }
 
-    nonisolated private static func readContacts() throws -> [AddressBookContact] {
+    nonisolated static func readContacts() throws -> [AddressBookContact] {
         let store = CNContactStore()
         let keys: [CNKeyDescriptor] = [
             CNContactFormatter.descriptorForRequiredKeys(for: .fullName),

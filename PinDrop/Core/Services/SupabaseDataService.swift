@@ -383,6 +383,53 @@ final class SupabaseDataService: Sendable {
             .value
     }
 
+    // MARK: - Live location shared with friends
+
+    /// Shares your position (when given) and your location permission with your friends.
+    func reportLocation(_ point: GeoPoint?, permission: String) async throws {
+        struct Params: Encodable, Sendable {
+            let lat: Double?
+            let lon: Double?
+            let perm: String
+
+            func encode(to encoder: any Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                if let lat { try container.encode(lat, forKey: .lat) } else { try container.encodeNil(forKey: .lat) }
+                if let lon { try container.encode(lon, forKey: .lon) } else { try container.encodeNil(forKey: .lon) }
+                try container.encode(perm, forKey: .perm)
+            }
+
+            enum CodingKeys: String, CodingKey {
+                case lat
+                case lon
+                case perm
+            }
+        }
+        try await client
+            .rpc("report_location", params: Params(lat: point?.latitude, lon: point?.longitude, perm: permission))
+            .execute()
+    }
+
+    func fetchFriendLocations() async throws -> [FriendLocation] {
+        let uid = try await currentUserID()
+        return try await client
+            .from("live_locations")
+            .select("user_id, latitude, longitude, updated_at, permission")
+            .neq("user_id", value: uid)
+            .execute()
+            .value
+    }
+
+    func fetchLocationPermissions() async throws -> [LocationPermissionRow] {
+        let uid = try await currentUserID()
+        return try await client
+            .from("location_permissions")
+            .select("user_id, permission")
+            .neq("user_id", value: uid)
+            .execute()
+            .value
+    }
+
     // MARK: - Online presence & suggestions
 
     /// Marks the app as open (no position is sent).

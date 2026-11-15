@@ -101,6 +101,13 @@ struct MainMapView: View {
                 .presentationBackground(.ultraThinMaterial)
                 .presentationCornerRadius(Theme.Radius.sheet)
         }
+        .sheet(isPresented: $state.isLocationRemindersPresented) {
+            LocationRemindersView()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.ultraThinMaterial)
+                .presentationCornerRadius(Theme.Radius.sheet)
+        }
         .sheet(item: $selectedPublicPlace) { place in
             PublicPlaceSheet(place: place)
                 .presentationDetents([.medium, .large])
@@ -258,6 +265,23 @@ struct MainMapView: View {
                 .annotationTitles(.hidden)
             }
 
+            ForEach(appState.visibleFriendLocations) { item in
+                Annotation(item.profile.displayName, coordinate: displayCoordinate(for: item.location.location), anchor: .bottom) {
+                    Button {
+                        HapticManager.shared.tap()
+                        appState.openProfile(item.profile)
+                    } label: {
+                        FriendLocationAnnotationView(
+                            user: item.profile,
+                            updatedAt: item.location.updatedAt,
+                            isOnline: appState.isOnline(item.profile.id)
+                        )
+                    }
+                    .buttonStyle(PressableButtonStyle())
+                }
+                .annotationTitles(.hidden)
+            }
+
             ForEach(visibleClusters) { cluster in
                 Annotation(appState.placeName(for: cluster) ?? "", coordinate: displayCoordinate(for: cluster.center), anchor: .bottom) {
                     annotationView(for: cluster)
@@ -354,6 +378,7 @@ struct MainMapView: View {
         VStack(spacing: 12) {
             topHUD
             Spacer(minLength: 0)
+            locationBanners
             if appState.lockedFriendPinCount > 0 {
                 lockedBanner
                     .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -365,6 +390,8 @@ struct MainMapView: View {
         .padding(.bottom, 8)
         .animation(Theme.spring, value: appState.isUnlocked)
         .animation(Theme.spring, value: currentSpeed == nil)
+        .animation(Theme.spring, value: appState.isAlwaysBannerDismissed)
+        .animation(Theme.spring, value: appState.isFriendsLocationBannerDismissed)
     }
 
     /// Profile views centered at the top, avatar and bell on the right, speed on the left
@@ -499,6 +526,45 @@ struct MainMapView: View {
         .buttonStyle(PressableButtonStyle())
         .accessibilityLabel(Text("notifications.title"))
         .accessibilityValue(Text("notifications.unread \(unread)"))
+    }
+
+    /// Red warnings shown every time the app is opened: your location is only "While Using",
+    /// or some friends don't share theirs with "Always".
+    @ViewBuilder
+    private var locationBanners: some View {
+        if locationService.authorizationStatus == .authorizedWhenInUse, !appState.isAlwaysBannerDismissed {
+            LocationWarningBanner(
+                title: "locationBanner.always.title",
+                message: Text("locationBanner.always.body"),
+                actionTitle: "locationBanner.always.action",
+                action: {
+                    HapticManager.shared.tap()
+                    appState.requestAlwaysLocation()
+                },
+                onDismiss: {
+                    withAnimation(Theme.spring) {
+                        appState.isAlwaysBannerDismissed = true
+                    }
+                }
+            )
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        } else if !appState.friendsWithoutAlways.isEmpty, !appState.isFriendsLocationBannerDismissed {
+            LocationWarningBanner(
+                title: "locationBanner.friends.title \(appState.friendsWithoutAlways.count)",
+                message: Text("locationBanner.friends.body"),
+                actionTitle: "locationBanner.friends.action",
+                action: {
+                    HapticManager.shared.tap()
+                    appState.isLocationRemindersPresented = true
+                },
+                onDismiss: {
+                    withAnimation(Theme.spring) {
+                        appState.isFriendsLocationBannerDismissed = true
+                    }
+                }
+            )
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
     }
 
     private var lockedBanner: some View {

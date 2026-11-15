@@ -116,31 +116,67 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "PinDrop uses your location only while the app is open: to pin your photos, show you on the map with how long you've been there, and count visits to your saved places and time spent with friends. There is no background tracking."
+            "value" : "PinDrop uses your location to pin your photos, show you and your friends on the map, count visits to your saved places and time spent with friends. Your position is shared only with your friends."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "PinDrop usa la tua posizione solo mentre l'app è aperta: per fissare le tue foto, mostrarti sulla mappa con da quanto tempo sei lì e contare le visite ai tuoi posti salvati e il tempo passato con gli amici. Nessun tracciamento in background."
+            "value" : "PinDrop usa la tua posizione per fissare le tue foto, mostrare te e i tuoi amici sulla mappa, contare le visite ai tuoi posti salvati e il tempo passato con gli amici. La tua posizione è condivisa solo con i tuoi amici."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "PinDrop usa tu ubicación solo mientras la app está abierta: para fijar tus fotos, mostrarte en el mapa con cuánto tiempo llevas ahí y contar las visitas a tus lugares guardados y el tiempo con amigos. No hay rastreo en segundo plano."
+            "value" : "PinDrop usa tu ubicación para fijar tus fotos, mostrarte a ti y a tus amigos en el mapa, contar visitas a tus lugares guardados y el tiempo con amigos. Tu ubicación solo se comparte con tus amigos."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "PinDrop utilise ta position uniquement quand l'app est ouverte : pour épingler tes photos, te montrer sur la carte avec depuis combien de temps tu es là et compter tes visites à tes lieux enregistrés et le temps passé avec tes amis. Aucun suivi en arrière-plan."
+            "value" : "PinDrop utilise ta position pour épingler tes photos, te montrer avec tes amis sur la carte, compter tes visites à tes lieux et le temps passé avec tes amis. Ta position n'est partagée qu'avec tes amis."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "PinDrop nutzt deinen Standort nur, während die App geöffnet ist: um deine Fotos zu pinnen, dich auf der Karte mit deiner Aufenthaltsdauer zu zeigen und Besuche deiner gespeicherten Orte sowie die Zeit mit Freunden zu zählen. Es gibt kein Tracking im Hintergrund."
+            "value" : "PinDrop nutzt deinen Standort, um deine Fotos zu pinnen, dich und deine Freunde auf der Karte zu zeigen, Besuche deiner Orte und die Zeit mit Freunden zu zählen. Dein Standort wird nur mit deinen Freunden geteilt."
+          }
+        }
+      }
+    },
+    "NSLocationAlwaysAndWhenInUseUsageDescription" : {
+      "comment" : "Info.plist: NSLocationAlwaysAndWhenInUseUsageDescription",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "With “Always”, your friends keep seeing where you are on the map even when PinDrop is closed. Updates are sent only when you move a significant distance, to save battery, and only your friends can see them."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Con “Sempre” i tuoi amici continuano a vedere dove sei sulla mappa anche quando PinDrop è chiusa. Gli aggiornamenti partono solo quando ti sposti in modo significativo, per risparmiare batteria, e li vedono solo i tuoi amici."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Con “Siempre” tus amigos siguen viendo dónde estás en el mapa aunque PinDrop esté cerrada. Solo se envían actualizaciones cuando te desplazas bastante, para ahorrar batería, y solo las ven tus amigos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avec « Toujours », tes amis continuent de voir où tu es sur la carte même quand PinDrop est fermé. Les mises à jour ne partent que lors de déplacements importants, pour économiser la batterie, et seuls tes amis les voient."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit „Immer“ sehen deine Freunde auch bei geschlossenem PinDrop, wo du bist. Aktualisierungen werden nur bei größeren Ortswechseln gesendet, um Akku zu sparen, und nur deine Freunde sehen sie."
           }
         }
       }

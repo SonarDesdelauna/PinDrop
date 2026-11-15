@@ -40,6 +40,7 @@ struct PinDropApp: App {
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:
+                appState.resetLocationBanners()
                 Task { await appState.refresh() }
             case .background:
                 appState.pruneExpiredPins()

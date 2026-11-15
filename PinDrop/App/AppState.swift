@@ -46,6 +46,14 @@ struct TrailPoint: Hashable, Sendable {
     let date: Date
 }
 
+/// A friend drawn on the map at their last shared position.
+struct FriendOnMap: Identifiable, Hashable {
+    let profile: UserProfile
+    let location: FriendLocation
+
+    var id: UUID { profile.id }
+}
+
 /// Global observable state for the signed-in session: profile, friends, pins, clusters,
 /// downloaded images, unlock state, selection and routing.
 @MainActor
@@ -94,6 +102,13 @@ final class AppState {
     /// Friends with the app open right now.
     private(set) var onlineFriendIDs: Set<UUID> = []
     private(set) var suggestions: [FriendSuggestion] = []
+    /// Friends' last shared positions and location permissions.
+    private(set) var friendLocations: [UUID: FriendLocation] = [:]
+    private(set) var friendPermissions: [UUID: String] = [:]
+    /// Red banners on the map, shown again every time the app is opened.
+    var isAlwaysBannerDismissed = false
+    var isFriendsLocationBannerDismissed = false
+    var isLocationRemindersPresented = false
     /// Profile opened from the friends list, notifications or the map.
     var presentedProfile: UserProfile?
 
@@ -118,6 +133,15 @@ final class AppState {
     init(dataService: SupabaseDataService, locationService: LocationService) {
         self.dataService = dataService
         self.locationService = locationService
+        // Background fixes ("Always" permission) are shared with friends even when the app
+        // was relaunched by iOS and no screen is showing.
+        locationService.backgroundFixHandler = { [dataService, locationService] point in
+            // iOS gives the app ~10 s of runtime after a location wake-up: enough to upload.
+            let permission = locationService.permissionName
+            Task {
+                try? await dataService.reportLocation(point, permission: permission)
+            }
+        }
     }
 
     // MARK: - Derived state
@@ -205,6 +229,59 @@ final class AppState {
 
     var unreadNotificationCount: Int {
         notifications.reduce(0) { $0 + ($1.isUnread ? 1 : 0) }
+    }
+
+    /// Friends whose position is shown on the map (shared in the last 24 hours).
+    var visibleFriendLocations: [FriendOnMap] {
+        let cutoff = Date.now.addingTimeInterval(-86_400)
+        return friends.compactMap { friend in
+            guard let location = friendLocations[friend.id], location.updatedAt > cutoff else { return nil }
+            return FriendOnMap(profile: friend, location: location)
+        }
+    }
+
+    /// Friends who don't share their location with "Always".
+    var friendsWithoutAlways: [UserProfile] {
+        friends.filter { friendPermissions[$0.id] != "always" }
+    }
+
+    func locationPermission(of friendID: UUID) -> String? {
+        friendPermissions[friendID]
+    }
+
+    /// The app is opened again: show the location banners again.
+    func resetLocationBanners() {
+        isAlwaysBannerDismissed = false
+        isFriendsLocationBannerDismissed = false
+    }
+
+    func requestAlwaysLocation() {
+        locationService.requestAlwaysAuthorization()
+    }
+
+    func reloadFriendLocations() async {
+        guard sessionPhase == .ready else { return }
+        async let locationsLoad = try? dataService.fetchFriendLocations()
+        async let permissionsLoad = try? dataService.fetchLocationPermissions()
+        let (locations, permissions) = await (locationsLoad, permissionsLoad)
+        if let locations {
+            var map: [UUID: FriendLocation] = [:]
+            for location in locations {
+                map[location.userID] = location
+            }
+            if map != friendLocations {
+                withAnimation(Theme.spring) {
+                    friendLocations = map
+                }
+            }
+        }
+        if let permissions {
+            var map: [UUID: String] = [:]
+            for row in permissions {
+                map[row.userID] = row.permission
+            }
+            friendPermissions = map
+        }
     }
 
     func isOnline(_ userID: UUID) -> Bool {
@@ -386,6 +463,7 @@ final class AppState {
         if let lastHeartbeat, Date.now.timeIntervalSince(lastHeartbeat) < 55 { return }
         lastHeartbeat = .now
         _ = try? await dataService.heartbeat(at: userLocation)
+        try? await dataService.reportLocation(userLocation, permission: locationService.permissionName)
     }
 
     private func updateTrail(with point: GeoPoint) {
@@ -691,6 +769,9 @@ final class AppState {
         startTask = nil
         onlineFriendIDs = []
         suggestions = []
+        friendLocations = [:]
+        friendPermissions = [:]
+        isLocationRemindersPresented = false
         hasLoadedOnlineFriends = false
         sessionUserID = nil
         sessionPhase = .idle
@@ -740,7 +821,11 @@ final class AppState {
         async let publicPlacesLoad: Void = reloadPublicPlaces(force: true)
         async let heartbeatLoad: Void = sendHeartbeatIfNeeded()
         async let presenceLoad: Void = refreshOnlinePresence()
-        _ = await (notificationsLoad, friendTimesLoad, publicPlacesLoad, heartbeatLoad, presenceLoad)
+        async let friendLocationsLoad: Void = reloadFriendLocations()
+        _ = await (notificationsLoad, friendTimesLoad, publicPlacesLoad, heartbeatLoad, presenceLoad, friendLocationsLoad)
+        if userLocation == nil {
+            try? await dataService.reportLocation(nil, permission: locationService.permissionName)
+        }
         do {
             async let profile = dataService.currentProfile()
             async let friends = dataService.fetchFriends()
@@ -802,6 +887,7 @@ final class AppState {
                 self.pruneExpiredPins()
                 await self.sendHeartbeatIfNeeded()
                 await self.refreshOnlinePresence()
+                await self.reloadFriendLocations()
                 tick += 1
                 if tick.isMultiple(of: 2) {
                     await self.refresh()

@@ -36,6 +36,11 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     private(set) var course: Double?
     /// Called on every fix while live updates are running.
     @ObservationIgnored var liveFixHandler: (@MainActor (GeoPoint) -> Void)?
+    /// Called for fixes received while the app is in the background (or relaunched by iOS
+    /// for a significant location change), to share them with friends.
+    @ObservationIgnored var backgroundFixHandler: (@MainActor (GeoPoint) -> Void)?
+    @ObservationIgnored private var isMonitoringSignificantChanges = false
+    private static let askedAlwaysKey = "pindrop.location.askedAlways"
 
     private let manager = CLLocationManager()
     @ObservationIgnored private var locationContinuations: [CheckedContinuation<GeoPoint?, Never>] = []
@@ -53,6 +58,50 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
         manager.activityType = .other
         authorizationStatus = manager.authorizationStatus
+        updateBackgroundMonitoring()
+    }
+
+    /// `true` when location is allowed even with the app closed.
+    var hasAlwaysPermission: Bool {
+        authorizationStatus == .authorizedAlways
+    }
+
+    /// Permission name shared with friends.
+    var permissionName: String {
+        switch authorizationStatus {
+        case .authorizedAlways: "always"
+        case .authorizedWhenInUse: "when_in_use"
+        default: "denied"
+        }
+    }
+
+    /// Asks to switch to "Always". iOS shows its prompt only once; afterwards the app's
+    /// Settings page is opened instead.
+    func requestAlwaysAuthorization() {
+        let defaults = UserDefaults.standard
+        if authorizationStatus == .authorizedWhenInUse, !defaults.bool(forKey: Self.askedAlwaysKey) {
+            defaults.set(true, forKey: Self.askedAlwaysKey)
+            manager.requestAlwaysAuthorization()
+        } else {
+            SystemSettings.openAppSettings()
+        }
+    }
+
+    /// With "Always", significant location changes keep friends updated even when the app is
+    /// closed (iOS relaunches it in the background). Low power: roughly every 500 m.
+    private func updateBackgroundMonitoring() {
+        if hasAlwaysPermission {
+            manager.allowsBackgroundLocationUpdates = true
+            manager.showsBackgroundLocationIndicator = false
+            if !isMonitoringSignificantChanges {
+                isMonitoringSignificantChanges = true
+                manager.startMonitoringSignificantLocationChanges()
+            }
+        } else if isMonitoringSignificantChanges {
+            isMonitoringSignificantChanges = false
+            manager.stopMonitoringSignificantLocationChanges()
+            manager.allowsBackgroundLocationUpdates = false
+        }
     }
 
     var isAuthorized: Bool {
@@ -164,6 +213,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
             stopLiveUpdates()
             resolveLocationRequests(with: nil)
         }
+        updateBackgroundMonitoring()
     }
 
     // MARK: - Reverse geocoding
@@ -248,8 +298,12 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         let speed = location.speedAccuracy >= 0 ? location.speed : -1
         let course = location.courseAccuracy >= 0 ? location.course : -1
         Task { @MainActor [weak self] in
-            self?.applyMotion(speed: speed, course: course)
-            self?.resolveLocationRequests(with: point)
+            guard let self else { return }
+            self.applyMotion(speed: speed, course: course)
+            self.resolveLocationRequests(with: point)
+            if UIApplication.shared.applicationState != .active {
+                self.backgroundFixHandler?(point)
+            }
         }
     }
 

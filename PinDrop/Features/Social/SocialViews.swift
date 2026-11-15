@@ -387,6 +387,22 @@ struct ProfileView: View {
     private var friendshipCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             if isFriend {
+                if appState.locationPermission(of: user.id) != "always" {
+                    HStack(spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Theme.danger)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("locationReminder.profileTitle")
+                                .font(Theme.text(.footnote, weight: .bold))
+                                .foregroundStyle(Theme.textPrimary)
+                            LocationPermissionLabel(permission: appState.locationPermission(of: user.id))
+                        }
+                        Spacer(minLength: 8)
+                        RemindFriendButton(friend: shown)
+                    }
+                    .padding(12)
+                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.danger.opacity(0.15)))
+                }
                 BestFriendProgressView(time: appState.friendTime(with: user.id), name: shown.firstName)
                 Button(role: .destructive) {
                     isConfirmingRemoval = true
