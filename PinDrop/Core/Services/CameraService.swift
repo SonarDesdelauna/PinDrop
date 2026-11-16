@@ -147,17 +147,6 @@ final class CaptureEngine: NSObject, @unchecked Sendable, AVCaptureVideoDataOutp
             session.sessionPreset = .photo
             guard session.canAddOutput(photoOutput) else { throw CameraError.configurationFailed }
             session.addOutput(photoOutput)
-            // Frames for videos: preview sized, enough for a 720 x 960 clip.
-            videoOutput.alwaysDiscardsLateVideoFrames = true
-            videoOutput.deliversPreviewSizedOutputBuffers = true
-            videoOutput.setSampleBufferDelegate(self, queue: recordQueue)
-            if session.canAddOutput(videoOutput) {
-                session.addOutput(videoOutput)
-            }
-            audioOutput.setSampleBufferDelegate(self, queue: recordQueue)
-            if session.canAddOutput(audioOutput) {
-                session.addOutput(audioOutput)
-            }
             isOutputConfigured = true
         }
 
@@ -213,26 +202,47 @@ final class CaptureEngine: NSObject, @unchecked Sendable, AVCaptureVideoDataOutp
 
     /// Starts writing a clip to `url`. Flipping the camera while recording keeps the same clip.
     func startRecording(to url: URL, withAudio: Bool) async -> Bool {
-        let hasAudio: Bool = await withCheckedContinuation { continuation in
+        let hasAudio: Bool? = await withCheckedContinuation { continuation in
             queue.async {
                 guard self.session.isRunning else {
-                    continuation.resume(returning: false)
+                    continuation.resume(returning: nil)
                     return
                 }
-                if withAudio, self.microphoneInput == nil,
-                   let mic = AVCaptureDevice.default(for: .audio),
-                   let input = try? AVCaptureDeviceInput(device: mic) {
+                // The video outputs (and the microphone) are attached the first time you film,
+                // so opening the camera for photos stays exactly as before.
+                let needsVideoOutput = !self.session.outputs.contains(self.videoOutput)
+                let needsMicrophone = withAudio && self.microphoneInput == nil
+                if needsVideoOutput || needsMicrophone {
                     self.session.beginConfiguration()
-                    if self.session.canAddInput(input) {
+                    if needsVideoOutput {
+                        self.videoOutput.alwaysDiscardsLateVideoFrames = true
+                        self.videoOutput.setSampleBufferDelegate(self, queue: self.recordQueue)
+                        if self.session.canAddOutput(self.videoOutput) {
+                            self.session.addOutput(self.videoOutput)
+                        }
+                    }
+                    if needsMicrophone,
+                       let mic = AVCaptureDevice.default(for: .audio),
+                       let input = try? AVCaptureDeviceInput(device: mic),
+                       self.session.canAddInput(input) {
                         self.session.addInput(input)
                         self.microphoneInput = input
+                        self.audioOutput.setSampleBufferDelegate(self, queue: self.recordQueue)
+                        if self.session.canAddOutput(self.audioOutput) {
+                            self.session.addOutput(self.audioOutput)
+                        }
                     }
                     self.session.commitConfiguration()
                 }
+                guard self.session.outputs.contains(self.videoOutput) else {
+                    continuation.resume(returning: nil)
+                    return
+                }
                 self.configureVideoConnection(position: self.currentInput?.device.position ?? .back)
-                continuation.resume(returning: withAudio && self.microphoneInput != nil)
+                continuation.resume(returning: withAudio && self.microphoneInput != nil && self.session.outputs.contains(self.audioOutput))
             }
         }
+        guard let hasAudio else { return false }
         return await withCheckedContinuation { continuation in
             recordQueue.async {
                 do {
@@ -447,6 +457,11 @@ final class CameraService {
         AVCaptureDevice.authorizationStatus(for: .video)
     }
 
+    /// Outside the main actor: the system answers on a background queue.
+    nonisolated static func requestMicrophoneAccess() async -> Bool {
+        await AVCaptureDevice.requestAccess(for: .audio)
+    }
+
     nonisolated static func requestAccess() async -> Bool {
         await AVCaptureDevice.requestAccess(for: .video)
     }
@@ -527,7 +542,7 @@ final class CameraService {
     /// Asks once for the microphone, so videos have sound.
     func prepareMicrophone() async {
         if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
-            _ = await AVCaptureDevice.requestAccess(for: .audio)
+            _ = await Self.requestMicrophoneAccess()
         }
     }
 
