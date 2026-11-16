@@ -21,18 +21,6 @@ struct PostCaptureSheet: View {
         case capsule
     }
 
-    /// Where a live photo goes: a 6 h pin on the map, a 24 h story, or both.
-    enum Destination: Hashable {
-        case pin
-        case story
-        case both
-
-        var includesPin: Bool { self != .story }
-        var includesStory: Bool { self != .pin }
-    }
-
-    static let storyTextLimit = 80
-
     let shot: CapturedShot
     let onRetake: () -> Void
     let onDropped: () -> Void
@@ -48,24 +36,11 @@ struct PostCaptureSheet: View {
     @State private var mode: DropMode = .live
     @State private var hint = ""
     @State private var recipient: UserProfile?
-    @State private var destination: Destination = .pin
-    @State private var overlayY: Double = 0.75
-    @State private var dragStartY: Double?
     @FocusState private var isCaptionFocused: Bool
     @FocusState private var isHintFocused: Bool
 
     private var currentLimit: Int {
-        if mode == .capsule { return GeoCapsule.messageLimit }
-        return destination == .story ? Self.storyTextLimit : Self.captionLimit
-    }
-
-    private var isStoryShot: Bool {
-        mode == .live && destination.includesStory
-    }
-
-    /// A story alone can be posted without a GPS fix.
-    private var needsLocation: Bool {
-        mode == .capsule || destination.includesPin
+        mode == .capsule ? GeoCapsule.messageLimit : Self.captionLimit
     }
 
     var body: some View {
@@ -73,10 +48,6 @@ struct PostCaptureSheet: View {
             VStack(spacing: 18) {
                 header
                 modeSelector
-                if mode == .live {
-                    destinationSelector
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
                 photo
                 if mode == .capsule {
                     hintField
@@ -88,7 +59,7 @@ struct PostCaptureSheet: View {
                 } else {
                     privacyNote
                 }
-                if shot.location == nil, needsLocation {
+                if shot.location == nil {
                     locationWarning
                 }
                 if let errorMessage {
@@ -108,12 +79,6 @@ struct PostCaptureSheet: View {
         .background(Theme.obsidian.ignoresSafeArea())
         .task {
             await resolvePlace()
-        }
-        .onAppear {
-            if appState.social.prefersStoryCapture {
-                destination = .story
-                appState.social.prefersStoryCapture = false
-            }
         }
     }
 
@@ -154,12 +119,6 @@ struct PostCaptureSheet: View {
                     if mode == .capsule {
                         Image(systemName: "lock.fill")
                         Text("post.capsule.duration")
-                    } else if destination == .story {
-                        Image(systemName: "circle.dashed")
-                        Text("story.duration")
-                    } else if destination == .both {
-                        Image(systemName: "timer")
-                        Text("story.duration.both")
                     } else {
                         Image(systemName: "timer")
                         Text("camera.sixHours")
@@ -172,13 +131,8 @@ struct PostCaptureSheet: View {
                 .glassCapsule()
                 .padding(12)
             }
-            .overlay {
-                if isStoryShot {
-                    storyTextOverlay
-                }
-            }
             .overlay(alignment: .bottomLeading) {
-                if !caption.isEmpty, !isStoryShot {
+                if !caption.isEmpty {
                     Text(verbatim: caption)
                         .font(Theme.text(.headline, weight: .semibold))
                         .foregroundStyle(Color.white)
@@ -242,78 +196,6 @@ struct PostCaptureSheet: View {
         }
         .buttonStyle(PressableButtonStyle(pressedScale: 0.97))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-
-    /// "Pin 6h" / "Story 24h" / "Both".
-    private var destinationSelector: some View {
-        HStack(spacing: 4) {
-            destinationButton(.pin, title: "story.destination.pin", icon: "mappin.and.ellipse")
-            destinationButton(.story, title: "story.destination.story", icon: "circle.dashed")
-            destinationButton(.both, title: "story.destination.both", icon: "square.stack.fill")
-        }
-        .padding(4)
-        .glassCapsule()
-    }
-
-    private func destinationButton(_ value: Destination, title: LocalizedStringKey, icon: String) -> some View {
-        let isSelected = destination == value
-        return Button {
-            guard destination != value else { return }
-            HapticManager.shared.selection()
-            withAnimation(Theme.spring) {
-                destination = value
-                if caption.count > currentLimit {
-                    caption = String(caption.prefix(currentLimit))
-                }
-            }
-        } label: {
-            Label(title, systemImage: icon)
-                .font(Theme.rounded(.footnote, weight: .bold))
-                .foregroundStyle(isSelected ? Color.white : Theme.textSecondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 9)
-                .background {
-                    if isSelected {
-                        Capsule().fill(value == .pin ? AnyShapeStyle(Theme.accentGradient) : AnyShapeStyle(StoryRingStyle.linear))
-                    }
-                }
-                .contentShape(Capsule())
-        }
-        .buttonStyle(PressableButtonStyle(pressedScale: 0.97))
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-
-    /// The story text pill: drag it up or down on the photo.
-    private var storyTextOverlay: some View {
-        GeometryReader { proxy in
-            let height = proxy.size.height
-            VStack(spacing: 8) {
-                StoryTextPill(text: caption.isEmpty ? String(localized: "story.text.placeholder") : caption, isPlaceholder: caption.isEmpty)
-                if let placeName {
-                    StoryLocationTag(name: placeName)
-                }
-            }
-            .frame(maxWidth: max(proxy.size.width - 32, 1))
-            .position(x: proxy.size.width / 2, y: height * overlayY)
-            .gesture(
-                DragGesture()
-                    .onChanged { value in
-                        if dragStartY == nil { dragStartY = overlayY }
-                        let start = dragStartY ?? overlayY
-                        overlayY = min(0.88, max(0.12, start + value.translation.height / max(height, 1)))
-                    }
-                    .onEnded { _ in
-                        dragStartY = nil
-                        HapticManager.shared.selection()
-                    }
-            )
-            .onTapGesture {
-                isCaptionFocused = true
-            }
-        }
-        .transition(.opacity)
     }
 
     private var hintField: some View {
@@ -427,7 +309,7 @@ struct PostCaptureSheet: View {
         HStack(spacing: 10) {
             Image(systemName: mode == .capsule ? "envelope.fill" : "text.bubble.fill")
                 .foregroundStyle(Theme.neonPurple)
-            TextField(mode == .capsule ? LocalizedStringKey("post.capsule.message.placeholder") : (isStoryShot ? LocalizedStringKey("story.text.field") : LocalizedStringKey("post.caption.placeholder")), text: $caption, axis: mode == .capsule ? .vertical : .horizontal)
+            TextField(mode == .capsule ? LocalizedStringKey("post.capsule.message.placeholder") : LocalizedStringKey("post.caption.placeholder"), text: $caption, axis: mode == .capsule ? .vertical : .horizontal)
                 .font(Theme.text(.body))
                 .foregroundStyle(Theme.textPrimary)
                 .lineLimit(1...4)
@@ -500,12 +382,6 @@ struct PostCaptureSheet: View {
                     } else if mode == .capsule {
                         Image(systemName: "shippingbox.fill")
                         Text("post.capsule.drop")
-                    } else if destination == .story {
-                        Image(systemName: "circle.dashed")
-                        Text("story.publish")
-                    } else if destination == .both {
-                        Image(systemName: "square.stack.fill")
-                        Text("story.publish.both")
                     } else {
                         Image(systemName: "mappin.and.ellipse")
                         Text("post.drop")
@@ -513,7 +389,7 @@ struct PostCaptureSheet: View {
                 }
             }
             .buttonStyle(PrimaryGradientButtonStyle())
-            .disabled((needsLocation && shot.location == nil) || isPublishing)
+            .disabled(shot.location == nil || isPublishing)
 
             Button {
                 HapticManager.shared.tap()
@@ -538,12 +414,7 @@ struct PostCaptureSheet: View {
     }
 
     private func drop() {
-        guard !isPublishing else { return }
-        if mode == .live, destination == .story {
-            publishStoryOnly()
-            return
-        }
-        guard let location = shot.location else { return }
+        guard let location = shot.location, !isPublishing else { return }
         isCaptionFocused = false
         isHintFocused = false
         isPublishing = true
@@ -579,39 +450,6 @@ struct PostCaptureSheet: View {
                     placeName: placeName,
                     caption: trimmedCaption
                 )
-                if destination == .both {
-                    try? await appState.social.publishStory(
-                        photo: shot.processed.fullData,
-                        overlayText: trimmedCaption,
-                        overlayY: overlayY,
-                        locationTag: placeName
-                    )
-                }
-                isPublishing = false
-                onDropped()
-            } catch {
-                HapticManager.shared.error()
-                errorMessage = error.localizedDescription
-                isPublishing = false
-            }
-        }
-    }
-
-    private func publishStoryOnly() {
-        isCaptionFocused = false
-        isPublishing = true
-        errorMessage = nil
-        let text = caption.trimmingCharacters(in: .whitespacesAndNewlines)
-        Task {
-            do {
-                try await appState.social.publishStory(
-                    photo: shot.processed.fullData,
-                    overlayText: text,
-                    overlayY: overlayY,
-                    locationTag: placeName
-                )
-                HapticManager.shared.success()
-                appState.showToast(.success, title: String(localized: "story.published.title"), subtitle: String(localized: "story.published.subtitle"))
                 isPublishing = false
                 onDropped()
             } catch {

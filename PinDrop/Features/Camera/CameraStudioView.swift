@@ -10,6 +10,8 @@ struct CameraStudioView: View {
     @Environment(LocationService.self) private var locationService
 
     @State private var capturedShot: CapturedShot?
+    @State private var storyShot: CapturedShot?
+    @State private var captureMode: CaptureMode = .pin
     @State private var isProcessing = false
     @State private var flashOverlayOpacity: Double = 0
     @State private var errorMessage: String?
@@ -43,8 +45,26 @@ struct CameraStudioView: View {
                 await locationService.requestAuthorization()
             }
         }
+        .onAppear {
+            if appState.social.prefersStoryCapture {
+                captureMode = .story
+                appState.social.prefersStoryCapture = false
+            }
+        }
         .onDisappear {
             camera.stop()
+        }
+        .fullScreenCover(item: $storyShot) { shot in
+            StoryComposerView(
+                shot: shot,
+                onRetake: {
+                    storyShot = nil
+                },
+                onPublished: {
+                    storyShot = nil
+                    appState.isCameraPresented = false
+                }
+            )
         }
         .sheet(item: $capturedShot) { shot in
             PostCaptureSheet(
@@ -251,11 +271,12 @@ struct CameraStudioView: View {
 
     private var bottomControls: some View {
         VStack(spacing: 14) {
+            modeSwitch
             HStack {
                 VStack(spacing: 4) {
-                    Image(systemName: "timer")
+                    Image(systemName: captureMode == .story ? "circle.dashed" : "timer")
                         .font(.system(size: 20, weight: .semibold))
-                    Text("camera.sixHours")
+                    Text(captureMode == .story ? LocalizedStringKey("story.duration") : LocalizedStringKey("camera.sixHours"))
                         .font(Theme.rounded(.caption2, weight: .bold))
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
@@ -281,12 +302,42 @@ struct CameraStudioView: View {
                 .accessibilityLabel(Text("camera.flip"))
             }
 
-            Text("camera.hint")
+            Text(captureMode == .story ? LocalizedStringKey("story.camera.hint") : LocalizedStringKey("camera.hint"))
                 .font(Theme.text(.caption))
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    /// PIN or STORY, like the modes of a camera app.
+    private var modeSwitch: some View {
+        HStack(spacing: 6) {
+            ForEach(CaptureMode.allCases, id: \.self) { mode in
+                let isSelected = captureMode == mode
+                Button {
+                    guard captureMode != mode else { return }
+                    HapticManager.shared.selection()
+                    withAnimation(Theme.spring) { captureMode = mode }
+                } label: {
+                    Text(mode.title)
+                        .font(Theme.rounded(.footnote, weight: .heavy))
+                        .tracking(1)
+                        .foregroundStyle(isSelected ? Color.black : Color.white.opacity(0.7))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 7)
+                        .background {
+                            if isSelected {
+                                Capsule().fill(Color.white)
+                            }
+                        }
+                }
+                .buttonStyle(PressableButtonStyle(pressedScale: 0.94))
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+        }
+        .padding(4)
+        .background(Color.white.opacity(0.1), in: Capsule())
     }
 
     private var shutterButton: some View {
@@ -298,7 +349,7 @@ struct CameraStudioView: View {
                     .strokeBorder(Color.white, lineWidth: 5)
                     .frame(width: 86, height: 86)
                 Circle()
-                    .fill(Theme.accentGradient)
+                    .fill(captureMode == .story ? AnyShapeStyle(StoryRingStyle.angular) : AnyShapeStyle(Theme.accentGradient))
                     .frame(width: 70, height: 70)
                     .scaleEffect(isProcessing ? 0.82 : 1)
                     .glow(Theme.electricViolet, radius: 14)
@@ -349,12 +400,17 @@ struct CameraStudioView: View {
                 guard let processed, let preview = UIImage(data: processed.fullData) else {
                     throw CameraError.captureFailed
                 }
-                capturedShot = CapturedShot(
+                let shot = CapturedShot(
                     previewImage: preview,
                     processed: processed,
                     location: location,
                     capturedAt: .now
                 )
+                if captureMode == .story {
+                    storyShot = shot
+                } else {
+                    capturedShot = shot
+                }
             } catch {
                 HapticManager.shared.error()
                 errorMessage = error.localizedDescription
@@ -364,6 +420,19 @@ struct CameraStudioView: View {
             withAnimation(.easeIn(duration: 0.3)) {
                 flashOverlayOpacity = 0
             }
+        }
+    }
+}
+
+/// What the shutter makes: a 6 h pin on the map or a 24 h story.
+enum CaptureMode: CaseIterable, Hashable {
+    case pin
+    case story
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .pin: "camera.mode.pin"
+        case .story: "camera.mode.story"
         }
     }
 }

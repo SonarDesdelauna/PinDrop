@@ -95,7 +95,7 @@ struct StoriesBarView: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 myStoryButton
                 ForEach(social.storyRings) { ring in
                     Button {
@@ -103,12 +103,12 @@ struct StoriesBarView: View {
                         social.storyViewerStart = ring.author.id
                     } label: {
                         VStack(spacing: 4) {
-                            StoryRingAvatar(user: ring.author, hasUnseen: ring.hasUnseenStories, size: 56)
+                            StoryRingAvatar(user: ring.author, hasUnseen: ring.hasUnseenStories, size: 50)
                             Text(verbatim: ring.author.firstName)
                                 .font(Theme.rounded(.caption2, weight: .semibold))
                                 .foregroundStyle(Theme.textPrimary)
                                 .lineLimit(1)
-                                .frame(width: 60)
+                                .frame(width: 54)
                         }
                     }
                     .buttonStyle(PressableButtonStyle(pressedScale: 0.92))
@@ -116,7 +116,7 @@ struct StoriesBarView: View {
                 }
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 6)
+            .padding(.top, 2)
         }
         .scrollClipDisabled()
     }
@@ -134,10 +134,10 @@ struct StoriesBarView: View {
             VStack(spacing: 4) {
                 ZStack(alignment: .bottomTrailing) {
                     if hasStory {
-                        StoryRingAvatar(user: appState.currentUser, hasUnseen: true, size: 56)
+                        StoryRingAvatar(user: appState.currentUser, hasUnseen: true, size: 50)
                     } else {
-                        AvatarBadge(user: appState.currentUser, size: 50)
-                            .frame(width: 56, height: 56)
+                        AvatarBadge(user: appState.currentUser, size: 44)
+                            .frame(width: 50, height: 50)
                     }
                     Image(systemName: "plus")
                         .font(.system(size: 11, weight: .heavy))
@@ -154,7 +154,7 @@ struct StoriesBarView: View {
                     .font(Theme.rounded(.caption2, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
-                    .frame(width: 64)
+                    .frame(width: 58)
             }
         }
         .buttonStyle(PressableButtonStyle(pressedScale: 0.92))
@@ -276,11 +276,6 @@ struct StoryViewerView: View {
                 .position(x: size.width / 2, y: size.height * story.overlayY)
                 .allowsHitTesting(false)
                 .opacity(isHolding ? 0 : 1)
-            } else if let tag = story.locationTag {
-                StoryLocationTag(name: tag)
-                    .position(x: size.width / 2, y: size.height * 0.8)
-                    .allowsHitTesting(false)
-                    .opacity(isHolding ? 0 : 1)
             }
 
             VStack(spacing: 0) {
@@ -329,9 +324,17 @@ struct StoryViewerView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(verbatim: isMine ? String(localized: "story.yours") : ring.author.firstName)
                             .font(Theme.rounded(.subheadline, weight: .bold))
-                        Text(verbatim: LocaleFormatter.relativeTimestamp(story.createdAt))
-                            .font(Theme.rounded(.caption, weight: .medium))
-                            .foregroundStyle(Color.white.opacity(0.75))
+                        HStack(spacing: 4) {
+                            Text(verbatim: LocaleFormatter.relativeTimestamp(story.createdAt))
+                            if let tag = story.locationTag, story.overlayText == nil {
+                                Text(verbatim: "·")
+                                Image(systemName: "mappin")
+                                Text(verbatim: tag)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .font(Theme.rounded(.caption, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.75))
                     }
                     .foregroundStyle(Color.white)
                 }

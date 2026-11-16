@@ -724,33 +724,30 @@ struct MainMapView: View {
     /// Profile views centered at the top, avatar and bell on the right, speed on the left
     /// while moving.
     private var topHUD: some View {
-        ZStack(alignment: .top) {
-            HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 6) {
+                    if isFarZoom {
+                        Spacer(minLength: 0)
+                    } else {
+                        StoriesBarView()
+                            .padding(.leading, -16)
+                            .transition(.move(edge: .leading).combined(with: .opacity))
+                    }
+                    viewsPill(compact: true)
+                        .padding(.top, 14)
+                        .layoutPriority(1)
+                }
                 if let speed = currentSpeed {
                     speedPill(speed)
-                        .padding(.top, 136)
                         .transition(.move(edge: .leading).combined(with: .opacity))
                 }
-                Spacer(minLength: 0)
-                VStack(spacing: 10) {
-                    profileButton
-                    bellButton
-                    chatButton
-                    recapButton
-                }
             }
-            ViewThatFits(in: .horizontal) {
-                viewsPill(compact: false)
-                viewsPill(compact: true)
-            }
-            .padding(.horizontal, 60)
-            .padding(.top, 8)
-            if !isFarZoom {
-                StoriesBarView()
-                    .padding(.top, 46)
-                    .padding(.trailing, 58)
-                    .padding(.leading, -16)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+            VStack(spacing: 10) {
+                profileButton
+                bellButton
+                chatButton
+                recapButton
             }
         }
         .frame(maxWidth: .infinity)
