@@ -306,3 +306,89 @@ pub async fn link_lastfm(state: State<'_, AppData>, username: String) -> Res<Val
 pub async fn unlink_music(state: State<'_, AppData>, provider: String) -> Res<Value> {
     state.rpc("unlink_music", json!({ "provider": provider })).await
 }
+
+// ───────────── Saved places ─────────────
+
+#[tauri::command]
+pub async fn my_places(state: State<'_, AppData>) -> Res<Value> {
+    state.rpc("my_places", json!({})).await
+}
+
+#[tauri::command]
+pub async fn add_place(
+    state: State<'_, AppData>,
+    name: String,
+    emoji: String,
+    lat: f64,
+    lon: f64,
+    is_public: bool,
+) -> Res<Value> {
+    let name: String = name.trim().chars().take(40).collect();
+    if name.is_empty() {
+        return Err("Scrivi un nome per il luogo.".into());
+    }
+    state
+        .rest(
+            Method::POST,
+            "/rest/v1/places",
+            &[],
+            Some(json!({
+                "name": name,
+                "emoji": emoji,
+                "latitude": lat,
+                "longitude": lon,
+                "radius_m": 100,
+                "is_public": is_public,
+            })),
+            Some("return=minimal"),
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn delete_place(state: State<'_, AppData>, id: String) -> Res<Value> {
+    state
+        .rest(Method::DELETE, "/rest/v1/places", &[("id", format!("eq.{id}"))], None, Some("return=minimal"))
+        .await
+}
+
+#[tauri::command]
+pub async fn record_presence(state: State<'_, AppData>, lat: f64, lon: f64) -> Res<Value> {
+    state.rpc("record_presence", json!({ "lat": lat, "lon": lon })).await
+}
+
+// ───────────── Notifications ─────────────
+
+#[tauri::command]
+pub async fn fetch_notifications(state: State<'_, AppData>) -> Res<Value> {
+    state
+        .rest(
+            Method::GET,
+            "/rest/v1/notifications",
+            &[
+                (
+                    "select",
+                    "id,kind,created_at,read_at,payload,actor:profiles!notifications_actor_id_fkey(*),place:places(id,name,emoji,latitude,longitude)".into(),
+                ),
+                ("order", "created_at.desc".into()),
+                ("limit", "60".into()),
+            ],
+            None,
+            None,
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn mark_notifications_read(state: State<'_, AppData>) -> Res<Value> {
+    let session = state.token().await?;
+    state
+        .rest(
+            Method::PATCH,
+            "/rest/v1/notifications",
+            &[("user_id", format!("eq.{}", session.user_id)), ("read_at", "is.null".into())],
+            Some(json!({ "read_at": now_iso() })),
+            Some("return=minimal"),
+        )
+        .await
+}

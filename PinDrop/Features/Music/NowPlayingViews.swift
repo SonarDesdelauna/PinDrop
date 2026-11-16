@@ -356,10 +356,6 @@ struct MusicConnectView: View {
                 sourceHeader("Apple Music", tint: Color(hex: 0xFA2D48), symbol: "music.note", connected: false)
             }
             .tint(Theme.neonPurple)
-            Text("music.apple.hint")
-                .font(Theme.text(.caption))
-                .foregroundStyle(Theme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
         .glassCard()
@@ -377,5 +373,84 @@ struct MusicConnectView: View {
             await appState.reloadMusic()
             isWorking = false
         }
+    }
+}
+
+// MARK: - Headphones on the avatar while listening
+
+/// Headphones around a round avatar that bob to the beat, with little notes floating out.
+struct ListeningHeadphones: View {
+    /// Diameter of the avatar the headphones sit on.
+    let size: CGFloat
+    var tint: Color = Theme.electricViolet
+
+    @State private var bob = false
+
+    private var cupSize: CGSize { CGSize(width: size * 0.26, height: size * 0.42) }
+
+    var body: some View {
+        ZStack {
+            // Headband over the top of the head.
+            Circle()
+                .trim(from: 0.56, to: 0.94)
+                .stroke(
+                    LinearGradient(colors: [Color(hex: 0x27272A), Color(hex: 0x52525B)], startPoint: .leading, endPoint: .trailing),
+                    style: StrokeStyle(lineWidth: max(2.5, size * 0.11), lineCap: .round)
+                )
+                .frame(width: size * 1.22, height: size * 1.22)
+            // Ear cups.
+            HStack(spacing: size * 1.02) {
+                cup
+                cup
+            }
+            .offset(y: size * 0.06)
+            // Notes.
+            TimelineView(.animation(minimumInterval: 1 / 30)) { context in
+                let time = context.date.timeIntervalSinceReferenceDate
+                ZStack {
+                    ForEach(0..<3, id: \.self) { index in
+                        note(index: index, time: time)
+                    }
+                }
+            }
+        }
+        .frame(width: size * 1.6, height: size * 1.6)
+        .rotationEffect(.degrees(bob ? 5 : -5))
+        .offset(y: bob ? -1 : 1)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.42).repeatForever(autoreverses: true)) {
+                bob = true
+            }
+        }
+    }
+
+    private var cup: some View {
+        RoundedRectangle(cornerRadius: cupSize.width * 0.5, style: .continuous)
+            .fill(LinearGradient(colors: [tint, Theme.neonPurple], startPoint: .top, endPoint: .bottom))
+            .overlay(
+                RoundedRectangle(cornerRadius: cupSize.width * 0.5, style: .continuous)
+                    .strokeBorder(Color.white, lineWidth: 1.5)
+            )
+            .frame(width: cupSize.width, height: cupSize.height)
+            .shadow(color: Color.black.opacity(0.25), radius: 2, y: 1)
+    }
+
+    /// A note rising from one of the cups, drifting outwards and fading.
+    private func note(index: Int, time: Double) -> some View {
+        let period = 2.4
+        let progress = ((time + Double(index) * period / 3).truncatingRemainder(dividingBy: period)) / period
+        let side: Double = index.isMultiple(of: 2) ? 1 : -1
+        let x = side * (Double(size) * 0.62 + progress * Double(size) * 0.35) + sin(progress * .pi * 3) * 3
+        let y = -progress * Double(size) * 0.95
+        let opacity = progress < 0.15 ? progress / 0.15 : max(0, 1 - (progress - 0.15) / 0.85)
+        return Image(systemName: index == 1 ? "music.note" : "music.quarternote.3")
+            .font(.system(size: max(8, size * 0.3), weight: .bold))
+            .foregroundStyle(tint)
+            .shadow(color: Color.white, radius: 1)
+            .rotationEffect(.degrees(side * progress * 25))
+            .offset(x: x, y: y)
+            .opacity(opacity)
     }
 }

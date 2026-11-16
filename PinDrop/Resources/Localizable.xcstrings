@@ -15627,31 +15627,31 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1. On last.fm: Settings → Applications → Spotify Scrobbling → Connect (for Apple Music use a scrobbler app).\n2. Type your Last.fm username here."
+            "value" : "1. On last.fm: Settings → Applications → Spotify Scrobbling → Connect.\n2. Type your Last.fm username here."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1. Su last.fm: Impostazioni → Applicazioni → Spotify Scrobbling → Connect (per Apple Music usa un'app scrobbler).\n2. Scrivi qui il tuo username Last.fm."
+            "value" : "1. Su last.fm: Impostazioni → Applicazioni → Spotify Scrobbling → Connect.\n2. Scrivi qui il tuo username Last.fm."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1. En last.fm: Ajustes → Aplicaciones → Spotify Scrobbling → Conectar (para Apple Music usa una app de scrobbling).\n2. Escribe aquí tu usuario de Last.fm."
+            "value" : "1. En last.fm: Ajustes → Aplicaciones → Spotify Scrobbling → Conectar.\n2. Escribe aquí tu usuario de Last.fm."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1. Sur last.fm : Paramètres → Applications → Spotify Scrobbling → Connecter (pour Apple Music, utilise une app de scrobbling).\n2. Saisis ici ton nom Last.fm."
+            "value" : "1. Sur last.fm : Paramètres → Applications → Spotify Scrobbling → Connecter.\n2. Saisis ici ton nom Last.fm."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1. Auf last.fm: Einstellungen → Anwendungen → Spotify Scrobbling → Verbinden (für Apple Music eine Scrobbler-App nutzen).\n2. Gib hier deinen Last.fm-Namen ein."
+            "value" : "1. Auf last.fm: Einstellungen → Anwendungen → Spotify Scrobbling → Verbinden.\n2. Gib hier deinen Last.fm-Namen ein."
           }
         }
       }
@@ -15687,41 +15687,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Last.fm-Name"
-          }
-        }
-      }
-    },
-    "music.apple.hint" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Shares the song playing in the Music app while PinDrop is open (iOS does not allow it in the background)."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Condivide la canzone che suona nell'app Musica mentre PinDrop è aperta (iOS non lo permette in background)."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Comparte la canción de la app Música mientras PinDrop está abierta (iOS no lo permite en segundo plano)."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Partage le morceau de l'app Musique tant que PinDrop est ouverte (iOS ne le permet pas en arrière-plan)."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Teilt den Song aus der Musik-App, solange PinDrop offen ist (iOS erlaubt es nicht im Hintergrund)."
           }
         }
       }

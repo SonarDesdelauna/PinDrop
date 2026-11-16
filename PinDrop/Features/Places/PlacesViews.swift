@@ -16,6 +16,8 @@ struct MyLocationAnnotationView: View {
     /// Friends standing with you, drawn side by side next to your avatar (like Bump).
     var companions: [UserProfile] = []
     var onlineIDs: Set<UUID> = []
+    /// What you are listening to: headphones and notes around your avatar.
+    var music: NowPlaying? = nil
     /// Friends' photos right under you on screen, merged onto your avatar.
     var nearbyPin: PhotoPin? = nil
     var nearbyCount: Int = 0
@@ -52,6 +54,11 @@ struct MyLocationAnnotationView: View {
                     .padding(3)
                     .background(Circle().fill(Color.white))
                     .shadow(color: Theme.emerald.opacity(0.6), radius: 10)
+
+                if music != nil {
+                    ListeningHeadphones(size: avatarSize + 6)
+                        .transition(.scale.combined(with: .opacity))
+                }
             }
             .frame(width: 56, height: 56)
             .overlay(alignment: .trailing) {

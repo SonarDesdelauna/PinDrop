@@ -44,9 +44,13 @@
     <div id="map"></div>
 
     <div class="top">
-      <div id="statusPill" class="pill glass"></div>
+      <button id="viewsPill" class="pill glass views"></button>
       <div class="side">
         <button id="profileBtn" class="avatar-btn"></button>
+        <button id="bellBtn" class="fab glass" aria-label="Notifiche">
+          <svg viewBox="0 0 24 24"><path d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22zm7-6V11a7 7 0 0 0-5.5-6.84V3.5a1.5 1.5 0 0 0-3 0v.66A7 7 0 0 0 5 11v5l-2 2v1h18v-1z"/></svg>
+          <span id="bellBadge" class="badge hidden"></span>
+        </button>
         <button id="recapBtn" class="fab glass" aria-label="Recap">
           <svg viewBox="0 0 24 24"><path d="M4 5h16v3H4zM6 10h12v9H6z" opacity=".35"/><path d="M12 11.5l1.2 2.6 2.8.3-2.1 1.9.6 2.8-2.5-1.5-2.5 1.5.6-2.8-2.1-1.9 2.8-.3z"/></svg>
           <span>Recap</span>
@@ -55,20 +59,21 @@
     </div>
 
     <div id="crossBanner" class="banner glass hidden"></div>
+    <button id="syncPill" class="sync-pill hidden"></button>
     <div id="inviteBanner" class="banner glass invite hidden"></div>
 
     <nav class="dock glass">
       <button id="locateBtn" class="dock-btn" aria-label="La mia posizione">
         <svg viewBox="0 0 24 24"><path d="M3 11l18-8-8 18-2-8z"/></svg>
       </button>
-      <button id="syncBtn" class="dock-btn" aria-label="Sync Shot">
-        <svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>
+      <button id="placesBtn" class="dock-btn" aria-label="Luoghi">
+        <svg viewBox="0 0 24 24"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"/></svg>
       </button>
       <button id="cameraBtn" class="dock-camera" aria-label="Scatta">
         <svg viewBox="0 0 24 24"><path d="M9 4l-1.5 2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.5L15 4zm3 4.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9z"/><circle cx="12" cy="13" r="2.6"/></svg>
       </button>
-      <button id="capsuleBtn" class="dock-btn" aria-label="Geo-Capsula">
-        <svg viewBox="0 0 24 24"><path d="M12 2l7 6-7 14L5 8z" opacity=".45"/><path d="M12 2l7 6H5z"/></svg>
+      <button id="addPlaceBtn" class="dock-btn" aria-label="Aggiungi luogo">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="4.2"/><path d="M11 10.5h2V19h-2z"/><ellipse cx="12" cy="20" rx="7" ry="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
       </button>
       <button id="friendsBtn" class="dock-btn" aria-label="Amici">
         <svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.9 3.1-6.5 7-6.5s7 2.6 7 6.5z"/><circle cx="17" cy="9" r="2.8" opacity=".7"/><path d="M15.5 13.6c3.7-.4 6.5 2 6.5 5.4h-4.2c0-2-.8-4-2.3-5.4z" opacity=".7"/></svg>

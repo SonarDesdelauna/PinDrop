@@ -34,6 +34,11 @@ struct FriendGroupAnnotationView: View {
                         .background(Circle().fill(Theme.accentGradient))
                 }
             }
+            .overlay {
+                if music != nil, users.count == 1 {
+                    ListeningHeadphones(size: avatarSize + 4)
+                }
+            }
             .padding(users.count > 1 ? 3 : 0)
             .background {
                 if users.count > 1 {

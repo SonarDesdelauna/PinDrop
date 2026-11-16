@@ -557,7 +557,13 @@ pub fn run() {
             features::fetch_now_playing,
             features::music_status,
             features::link_lastfm,
-            features::unlink_music
+            features::unlink_music,
+            features::my_places,
+            features::add_place,
+            features::delete_place,
+            features::record_presence,
+            features::fetch_notifications,
+            features::mark_notifications_read
         ])
         .run(tauri::generate_context!())
         .expect("error while running PinDrop");

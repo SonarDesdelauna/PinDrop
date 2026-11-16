@@ -27,7 +27,7 @@ struct MainMapView: View {
     @State private var edgeZoomSide: HorizontalEdge?
     private static let globeAltitude: Double = 1_200_000
     /// Zoomed out further than this (meters per screen point) only your dot is drawn.
-    private static let farZoomScale: Double = 160
+    private static let farZoomScale: Double = 1_200
     /// Your own photo is drawn on your avatar while you are this close to it.
     private static let ownPinMergeDistance: Double = 150
     /// Below this speed you are considered still (m/s).
@@ -232,7 +232,7 @@ struct MainMapView: View {
 
     /// Very far out (or on the globe) the map shows only your position, like Apple Maps.
     private var isFarZoom: Bool {
-        isGlobeMode || layoutScale > Self.farZoomScale
+        layoutScale > Self.farZoomScale
     }
 
     private var mapLayout: MapLayout {
@@ -565,6 +565,7 @@ struct MainMapView: View {
                         speed: currentSpeed,
                         companions: layout.companions,
                         onlineIDs: onlineIDs(for: layout.companions),
+                        music: appState.liveMusic(for: appState.currentUser.id),
                         nearbyPin: layout.pinsUnderMe.first,
                         nearbyCount: layout.pinsUnderMe.count,
                         nearbyThumbnail: layout.pinsUnderMe.first.flatMap { appState.thumbnail(for: $0) },

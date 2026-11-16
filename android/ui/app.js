@@ -30,6 +30,8 @@ const ICON = {
 };
 
 const state = {
+  places: [],
+  notifications: [],
   music: new Map(),
   displayPos: null,
   me: null,
@@ -509,7 +511,7 @@ function syncCandidates() {
 // ───────────── Layout: true positions, merge what would overlap ─────────────
 
 /** Zoomed out further than this, only your own dot is drawn (like Apple Maps). */
-const FAR_ZOOM = 7;
+const FAR_ZOOM = 5.5;
 const isFarZoom = () => map.getZoom() < FAR_ZOOM;
 
 function computeLayout() {
@@ -521,7 +523,7 @@ function computeLayout() {
   const nearMe = (p, r) => meP && gap(meP, p) < ME_R + r;
   const occupied = meP ? [{ p: meP, r: ME_R }] : [];
   const fits = (p, r) => occupied.every((o) => gap(o.p, p) >= o.r + r);
-  const L = { far: isFarZoom(), companions: [], groups: [], clusters: [], underMe: [], capsules: [], capsulesUnderMe: [] };
+  const L = { far: isFarZoom(), companions: [], groups: [], clusters: [], underMe: [], capsules: [], capsulesUnderMe: [], places: [] };
   if (L.far) return L;
 
   for (const f of freshLocations()) {
@@ -549,6 +551,11 @@ function computeLayout() {
     if (nearMe(p, 14)) L.capsulesUnderMe.push(cap);
     else if (fits(p, 18)) { L.capsules.push(cap); occupied.push({ p, r: 18 }); }
   }
+  for (const place of state.places) {
+    const p = P({ lat: place.latitude, lon: place.longitude });
+    if (nearMe(p, 20)) { L.currentPlace = place; continue; }
+    if (fits(p, 28)) { L.places.push(place); occupied.push({ p, r: 28 }); }
+  }
   return L;
 }
 
@@ -565,6 +572,8 @@ function layoutKey(L) {
     L.capsulesUnderMe.map((c) => c.id),
     [...state.online],
     activeCrossEvents().map((e) => e.id),
+    L.places.map((p) => p.id + p.name + p.emoji),
+    L.currentPlace?.id,
   ]);
 }
 
@@ -603,6 +612,10 @@ function renderMarkers(force) {
     return;
   }
 
+  for (const place of L.places) {
+    addMarker(element(`<div class="m-place"><div class="emoji">${esc(place.emoji)}</div><div class="tag">${esc(place.name)}</div></div>`, () => openPlacesSheet()), [place.longitude, place.latitude]);
+  }
+
   for (const ev of activeCrossEvents()) {
     addMarker(element(`<div class="m-cross"><div class="wave"></div><div class="wave"></div><div class="wave"></div><div class="center">💫</div></div>`), [ev.lon, ev.lat], "center");
   }
@@ -629,7 +642,7 @@ function renderMarkers(force) {
     const label = profiles.length > 2 ? `${firstName(profiles[0])} +${profiles.length - 1}` : profiles.map(firstName).join(" & ");
     const avatars = profiles.slice(0, 4).map((p) => avatarHTML(p)).join("") + (profiles.length > 4 ? `<div class="avatar" style="background:var(--grad)">+${profiles.length - 4}</div>` : "");
     const song = profiles.length === 1 ? liveMusic(profiles[0].id) : null;
-    const html = `<div class="m-group"><div class="stack${profiles.length > 1 ? " many" : ""}">${avatars}</div><div class="tag">${anyOnline ? '<span class="dot"></span>' : ""}${esc(label)}${anyOnline ? "" : ` · ${esc(ago(newest.updated_at))}`}</div>${song ? `<div class="tag music"><span class="eq"><i></i><i></i><i></i></span>${esc(song.track)}</div>` : ""}</div>`;
+    const html = `<div class="m-group"><div class="stack${profiles.length > 1 ? " many" : ""}">${avatars}${song ? HEADPHONES_HTML : ""}</div><div class="tag">${anyOnline ? '<span class="dot"></span>' : ""}${esc(label)}${anyOnline ? "" : ` · ${esc(ago(newest.updated_at))}`}</div>${song ? `<div class="tag music"><span class="eq"><i></i><i></i><i></i></span>${esc(song.track)}</div>` : ""}</div>`;
     addMarker(element(html, () => (g.length === 1 ? openFriend(g[0].profile) : openGroup(g))), [newest.lon, newest.lat]);
   }
 
@@ -644,7 +657,9 @@ function renderMarkers(force) {
       ${own.length ? `<div class="badge-tr" data-act="own"><img class="mini-thumb mine" src="${esc(ownURL || "")}">${own.length > 1 ? `<span class="mini-count">${own.length}</span>` : ""}</div>` : ""}
       ${others.length ? `<div class="badge-tl" data-act="others"><img class="mini-thumb" src="${esc(otherURL || "")}">${others.length > 1 ? `<span class="mini-count">${others.length}</span>` : ""}</div>` : ""}
       ${L.capsulesUnderMe.length ? `<div class="badge-bl" data-act="capsule"><div class="crystal-badge">${ICON.gemSmall}</div></div>` : ""}
-      </div><div class="tag"><span class="dot"></span>Tu${L.companions.length ? ` + ${esc(L.companions.map(firstName).join(", "))}` : ""}</div></div>`;
+      ${liveMusic(state.me.id) ? HEADPHONES_HTML : ""}
+      ${L.currentPlace ? `<div class="badge-br">${esc(L.currentPlace.emoji)}</div>` : ""}
+      </div><div class="tag"><span class="dot"></span>${L.currentPlace ? esc(L.currentPlace.name) : "Tu"}${L.companions.length ? ` + ${esc(L.companions.map(firstName).join(", "))}` : ""}</div></div>`;
     const el = element(html);
     el.querySelector('[data-act="own"]')?.addEventListener("click", (e) => { e.stopPropagation(); openPins(own); });
     el.querySelector('[data-act="others"]')?.addEventListener("click", (e) => { e.stopPropagation(); openPins(others); });
@@ -693,18 +708,14 @@ function updateZones() {
 // ───────────── Status pill ─────────────
 
 function updateStatus() {
-  const pill = $("statusPill");
+  // Profile views, centered at the top (like the iPhone).
+  const views = state.me?.view_count || 0;
+  $("viewsPill").innerHTML = `<svg viewBox="0 0 24 24" class="eye"><path d="M12 5C6.5 5 2.7 9.4 1.5 12c1.2 2.6 5 7 10.5 7s9.3-4.4 10.5-7C21.3 9.4 17.5 5 12 5zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/></svg><span><b class="accent">${views}</b> ${views === 1 ? "visualizzazione" : "visualizzazioni"} del profilo</span>`;
+  // Sync Shot pill above the dock when a friend is close.
   const candidates = syncCandidates();
-  $("syncBtn").classList.toggle("hot", candidates.length > 0);
-  if (candidates.length) {
-    pill.innerHTML = `⚡ <span><b>${esc(candidates.map(firstName).join(", "))}</b> è qui: Sync Shot!</span>`;
-  } else if (isUnlocked()) {
-    const last = myActivePins().sort((a, b) => new Date(b.expires_at) - new Date(a.expires_at))[0];
-    pill.innerHTML = `🔓 <span>Il tuo pin scade tra <span class="accent">${until(last.expires_at)}</span></span>`;
-  } else {
-    const hidden = state.pins.filter((p) => isLocked(p)).length;
-    pill.innerHTML = hidden ? `🔒 <span>${hidden} foto di amici: scatta per sbloccarle</span>` : "📸 <span>Scatta e lascia il tuo pin</span>";
-  }
+  const pill = $("syncPill");
+  pill.classList.toggle("hidden", candidates.length === 0);
+  if (candidates.length) pill.innerHTML = `⚡ Sync Shot con <b>${esc(candidates.map(firstName).join(", "))}</b>`;
 }
 
 // ───────────── Location ─────────────
@@ -751,6 +762,7 @@ async function updateLocation(request = false) {
   updateZones();
   checkCapsuleProximity();
   invoke("report_location", { lat: pos.lat, lon: pos.lon, granted: true }).catch(() => {});
+  recordPresenceIfNeeded(pos);
 }
 
 $("locateBtn").addEventListener("click", async () => {
@@ -869,6 +881,10 @@ async function startMain() {
   setInterval(refreshCross, 30000);
   setInterval(() => updateLocation(false), 12000);
   setInterval(trackPosition, 2500);
+  loadPlaces();
+  loadNotifications();
+  setInterval(loadNotifications, 60000);
+  setInterval(() => loadPlaces(), 120000);
   loadMusic();
   setInterval(loadMusic, 30000);
   setInterval(() => loadFriends().catch(() => {}), 60000);
@@ -1041,10 +1057,10 @@ async function renderMusicBox(box) {
   const ready = status?.lastfm_available;
   box.innerHTML = `
     <div class="music-src"><b style="color:${MUSIC_TINT.lastfm}">Last.fm</b>${lastfm ? '<span class="ok">✓ collegato</span>' : ""}</div>
-    <p class="muted small" style="margin:4px 0 8px">Scrivi il tuo username Last.fm: funziona con tutto ciò che fa scrobbling (Spotify, YouTube Music, Apple Music con un'app scrobbler), anche con PinDrop chiusa.</p>
+    <p class="muted small" style="margin:4px 0 8px">Scrivi il tuo username Last.fm: funziona anche con PinDrop chiusa.</p>
     ${ready ? `<div class="row"><div class="field grow"><input id="lastfmName" type="text" placeholder="username Last.fm" autocapitalize="none" value="${esc(lastfm)}"></div><button id="lastfmSave" class="primary" style="padding:15px">Salva</button></div>
     ${lastfm ? '<button class="ghost" id="lastfmOff">Scollega Last.fm</button>' : ""}` : '<p class="muted small">Non ancora disponibile: in arrivo.</p>'}
-    <p class="muted small" style="margin:8px 0 0">Spotify: su last.fm vai in Impostazioni → Applicazioni → <b>Spotify Scrobbling</b> → Connect. Apple Music: usa un'app scrobbler collegata a Last.fm.</p>
+    <p class="muted small" style="margin:8px 0 0">Spotify: su last.fm vai in Impostazioni → Applicazioni → <b>Spotify Scrobbling</b> → Connect.</p>
     <p id="musicMsg" class="msg"></p>`;
   box.querySelector("#lastfmSave")?.addEventListener("click", async (e) => {
     const name = box.querySelector("#lastfmName").value.trim();
@@ -1066,6 +1082,141 @@ async function renderMusicBox(box) {
     renderMusicBox(box);
   });
 }
+
+// ───────────── Headphones while listening ─────────────
+
+const HEADPHONES_HTML = `<div class="phones"><div class="band"></div><div class="cup l"></div><div class="cup r"></div><i class="note n1">♪</i><i class="note n2">♫</i><i class="note n3">♪</i></div>`;
+
+// ───────────── Saved places ─────────────
+
+const PLACE_EMOJIS = ["📍", "🏠", "🏫", "💼", "☕️", "🍕", "🏋️", "🌳", "🎵", "🛍️", "🍻", "❤️"];
+let lastPresenceAt = 0;
+let lastPresenceKey = "";
+
+async function loadPlaces() {
+  try {
+    state.places = (await invoke("my_places")) || [];
+    scheduleLayout(true);
+  } catch (_) {}
+}
+
+function placeInside(pos) {
+  return state.places.filter((p) => distance(pos, { lat: p.latitude, lon: p.longitude }) <= (p.radius_m || 100));
+}
+
+/** Records visits of saved places: when entering one, then every few minutes. */
+function recordPresenceIfNeeded(pos) {
+  const inside = placeInside(pos);
+  const key = inside.map((p) => p.id).sort().join(",");
+  if (!inside.length) { lastPresenceKey = ""; return; }
+  if (key === lastPresenceKey && Date.now() - lastPresenceAt < 240000) return;
+  lastPresenceKey = key;
+  lastPresenceAt = Date.now();
+  invoke("record_presence", { lat: pos.lat, lon: pos.lon }).then(loadPlaces).catch(() => {});
+}
+
+function openPlacesSheet() {
+  const rows = [...state.places].sort((a, b) => (b.visit_count || 0) - (a.visit_count || 0));
+  openSheet(`${head("⭐ I tuoi luoghi")}
+    <div class="places-hero"><b>${state.places.length}</b><span>${state.places.length === 1 ? "luogo" : "luoghi"} · ${rows.reduce((n, p) => n + (p.visit_count || 0), 0)} visite</span></div>
+    <div id="placesList">${rows.map((p) => `<div class="person" data-place="${p.id}"><div class="place-emoji">${esc(p.emoji)}</div><div class="info"><b>${esc(p.name)}</b><span>${p.visit_count || 0} visite${p.is_public ? " · pubblico" : " · privato"}${state.myPos ? " · " + distanceText(distance(state.myPos, { lat: p.latitude, lon: p.longitude })) : ""}</span></div><button class="mini decline" data-del="${p.id}">✕</button></div>`).join("")
+      || '<p class="muted small">Nessun luogo salvato. Aggiungine uno con il pulsante 📍 in basso.</p>'}</div>
+    <button class="primary" data-act="add">＋ Aggiungi un luogo</button>`, (root) => {
+    root.querySelector('[data-act="add"]').addEventListener("click", openAddPlaceSheet);
+    root.querySelector("#placesList").addEventListener("click", async (e) => {
+      const del = e.target.closest("[data-del]");
+      if (del) {
+        e.stopPropagation();
+        if (!confirm("Eliminare questo luogo?")) return;
+        await invoke("delete_place", { id: del.dataset.del }).catch((err) => toast(errorText(err)));
+        await loadPlaces();
+        openPlacesSheet();
+        return;
+      }
+      const row = e.target.closest("[data-place]");
+      const place = row && state.places.find((p) => p.id === row.dataset.place);
+      if (place) { closeSheet(); map.flyTo({ center: [place.longitude, place.latitude], zoom: 17, duration: 900 }); }
+    });
+  });
+}
+
+function openAddPlaceSheet() {
+  let emoji = PLACE_EMOJIS[0];
+  let where = state.myPos ? "me" : "map";
+  openSheet(`${head("📍 Nuovo luogo")}
+    <div class="field"><input id="placeName" type="text" maxlength="40" placeholder="Nome (es. Casa, Palestra…)"></div>
+    <div class="emoji-grid">${PLACE_EMOJIS.map((e, i) => `<button class="emoji-opt${i === 0 ? " on" : ""}" data-emoji="${e}">${e}</button>`).join("")}</div>
+    <div class="seg"><button data-where="me" class="${where === "me" ? "on" : ""}">📍 La mia posizione</button><button data-where="map" class="${where === "map" ? "on" : ""}">🗺️ Centro mappa</button></div>
+    <label class="toggle-row"><input id="placePublic" type="checkbox"> <span>Pubblico: visibile agli amici sul tuo profilo</span></label>
+    <button class="primary" id="placeSave">Salva luogo</button>
+    <p id="placeMsg" class="msg"></p>`, (root) => {
+    root.querySelector(".emoji-grid").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-emoji]");
+      if (!b) return;
+      emoji = b.dataset.emoji;
+      root.querySelectorAll(".emoji-opt").forEach((x) => x.classList.toggle("on", x === b));
+    });
+    root.querySelector(".seg").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-where]");
+      if (!b) return;
+      where = b.dataset.where;
+      root.querySelectorAll("[data-where]").forEach((x) => x.classList.toggle("on", x === b));
+    });
+    root.querySelector("#placeSave").addEventListener("click", async (e) => {
+      const name = root.querySelector("#placeName").value.trim();
+      const center = map.getCenter();
+      const pos = where === "me" && state.myPos ? state.myPos : { lat: center.lat, lon: center.lng };
+      if (!name) { root.querySelector("#placeMsg").textContent = "Scrivi un nome per il luogo."; return; }
+      e.currentTarget.disabled = true;
+      try {
+        await invoke("add_place", { name, emoji, lat: pos.lat, lon: pos.lon, isPublic: root.querySelector("#placePublic").checked });
+        await loadPlaces();
+        closeSheet();
+        toast(`${emoji} ${name} salvato`);
+      } catch (err) {
+        root.querySelector("#placeMsg").textContent = errorText(err);
+        e.currentTarget.disabled = false;
+      }
+    });
+  });
+}
+
+$("placesBtn").addEventListener("click", openPlacesSheet);
+$("addPlaceBtn").addEventListener("click", openAddPlaceSheet);
+$("viewsPill").addEventListener("click", () => $("profileBtn").click());
+
+// ───────────── Notifications ─────────────
+
+async function loadNotifications() {
+  try {
+    state.notifications = (await invoke("fetch_notifications")) || [];
+    const unread = state.notifications.filter((n) => !n.read_at).length;
+    $("bellBadge").textContent = unread > 99 ? "99+" : unread;
+    $("bellBadge").classList.toggle("hidden", unread === 0);
+  } catch (_) {}
+}
+
+function notificationText(n) {
+  const who = n.actor ? `<b>${esc(n.actor.display_name)}</b>` : "Qualcuno";
+  switch (n.kind) {
+    case "friend_request": return `${who} ti ha inviato una richiesta di amicizia`;
+    case "friend_accepted": return `${who} ha accettato la tua richiesta`;
+    case "ping": return `${who} ti ha mandato un ping 👋`;
+    case "place_reached": return `${who} è arrivato${n.place ? ` a ${esc(n.place.emoji)} ${esc(n.place.name)}` : ""}`;
+    case "best_friend": return `Tu e ${who} siete migliori amici 💜`;
+    default: return `${who} ha fatto qualcosa su PinDrop`;
+  }
+}
+
+$("bellBtn").addEventListener("click", async () => {
+  await loadNotifications();
+  const list = state.notifications || [];
+  openSheet(`${head("🔔 Notifiche")}${list.map((n) => `<div class="person${n.read_at ? "" : " unread"}">${n.actor ? avatarHTML(n.actor) : '<div class="place-emoji">🔔</div>'}<div class="info"><span class="notif">${notificationText(n)}</span><span>${esc(ago(n.created_at))}</span></div></div>`).join("")
+    || '<p class="muted small">Nessuna notifica per ora.</p>'}`);
+  if (list.some((n) => !n.read_at)) {
+    invoke("mark_notifications_read").then(loadNotifications).catch(() => {});
+  }
+});
 
 // ───────────── Camera ─────────────
 
@@ -1179,7 +1330,6 @@ $("photoInput").addEventListener("change", async (e) => {
 });
 
 $("cameraBtn").addEventListener("click", () => openCamera("pin"));
-$("capsuleBtn").addEventListener("click", () => openCamera("capsule"));
 
 function canvasJPEG(source, maxSide, quality, blur = 0) {
   const w0 = source.width, h0 = source.height;
@@ -1428,7 +1578,7 @@ function celebrate(emoji) {
 
 // ───────────── Sync Shot ─────────────
 
-$("syncBtn").addEventListener("click", () => {
+$("syncPill").addEventListener("click", () => {
   const candidates = syncCandidates();
   if (!candidates.length) return toast(`⚡ Avvicinati a meno di ${SYNC_M} m da un amico per un Sync Shot`);
   if (candidates.length === 1) return startSync(candidates[0]);
