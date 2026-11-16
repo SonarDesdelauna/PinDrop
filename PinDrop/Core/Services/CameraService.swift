@@ -367,6 +367,10 @@ private final class VideoRecorder: @unchecked Sendable {
     }
 
     func appendVideo(_ buffer: CMSampleBuffer) {
+        // Frames still in the sensor's landscape orientation (right after the outputs are
+        // attached or while switching camera) are skipped: the clip is always upright.
+        guard let pixels = CMSampleBufferGetImageBuffer(buffer),
+              CVPixelBufferGetHeight(pixels) >= CVPixelBufferGetWidth(pixels) else { return }
         if !isSessionStarted {
             guard writer.startWriting() else { return }
             writer.startSession(atSourceTime: CMSampleBufferGetPresentationTimeStamp(buffer))

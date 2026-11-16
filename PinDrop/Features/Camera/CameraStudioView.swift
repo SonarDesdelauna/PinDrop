@@ -456,7 +456,7 @@ struct CameraStudioView: View {
             if !isRecording && !isStartingVideo {
                 holdTask?.cancel()
                 holdTask = Task {
-                    try? await Task.sleep(for: .milliseconds(280))
+                    try? await Task.sleep(for: .milliseconds(170))
                     guard !Task.isCancelled else { return }
                     await startVideo()
                 }
@@ -484,7 +484,7 @@ struct CameraStudioView: View {
             }
         } else if isStartingVideo {
             if !isLocked { stopWhenStarted = true }
-        } else if duration < 0.28 {
+        } else if duration < 0.17 {
             capture()
         }
     }
