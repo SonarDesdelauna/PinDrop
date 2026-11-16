@@ -470,17 +470,6 @@ final class SupabaseDataService: Sendable {
             .value
     }
 
-    func linkSpotify(refreshToken: String, accessToken: String, expiresIn: Int) async throws {
-        struct Params: Encodable, Sendable {
-            let refresh_token: String
-            let access_token: String
-            let expires_in: Int
-        }
-        try await client
-            .rpc("link_spotify", params: Params(refresh_token: refreshToken, access_token: accessToken, expires_in: expiresIn))
-            .execute()
-    }
-
     func linkLastfm(_ username: String) async throws {
         try await client
             .rpc("link_lastfm", params: ["username": username])

@@ -15452,31 +15452,31 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your friends see your song on the map and on your profile. Spotify and Last.fm keep working with PinDrop closed."
+            "value" : "Your friends see your song on the map and on your profile. Works with PinDrop closed too, through Last.fm."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "I tuoi amici vedono la tua canzone sulla mappa e sul profilo. Spotify e Last.fm funzionano anche con PinDrop chiusa."
+            "value" : "I tuoi amici vedono la tua canzone sulla mappa e sul profilo. Funziona anche con PinDrop chiusa, tramite Last.fm."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tus amigos ven tu canción en el mapa y en tu perfil. Spotify y Last.fm funcionan incluso con PinDrop cerrada."
+            "value" : "Tus amigos ven tu canción en el mapa y en tu perfil. Funciona incluso con PinDrop cerrada, a través de Last.fm."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tes amis voient ton morceau sur la carte et sur ton profil. Spotify et Last.fm marchent même PinDrop fermée."
+            "value" : "Tes amis voient ton morceau sur la carte et sur ton profil. Ça marche même PinDrop fermée, via Last.fm."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Deine Freunde sehen deinen Song auf der Karte und im Profil. Spotify und Last.fm funktionieren auch bei geschlossener App."
+            "value" : "Deine Freunde sehen deinen Song auf der Karte und im Profil. Funktioniert über Last.fm auch bei geschlossener App."
           }
         }
       }
@@ -15621,107 +15621,37 @@
         }
       }
     },
-    "music.spotify.hint" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sign in with Spotify: the song you play on any device appears here, even with PinDrop closed."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Accedi con Spotify: la canzone che ascolti su qualsiasi dispositivo appare qui, anche con PinDrop chiusa."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Inicia sesión con Spotify: la canción que suena en cualquier dispositivo aparece aquí, incluso con PinDrop cerrada."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Connecte-toi avec Spotify : le morceau joué sur n'importe quel appareil apparaît ici, même PinDrop fermée."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Melde dich mit Spotify an: Der Song auf jedem Gerät erscheint hier, auch bei geschlossener App."
-          }
-        }
-      }
-    },
-    "music.spotify.connect" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Connect Spotify"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Collega Spotify"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Conectar Spotify"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Connecter Spotify"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spotify verbinden"
-          }
-        }
-      }
-    },
     "music.lastfm.hint" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Type your Last.fm username. Works for anything that scrobbles to Last.fm (Spotify, Apple Music with a scrobbler app, YouTube Music…), with PinDrop closed too."
+            "value" : "1. On last.fm: Settings → Applications → Spotify Scrobbling → Connect (for Apple Music use a scrobbler app).\n2. Type your Last.fm username here."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scrivi il tuo username Last.fm. Funziona con tutto ciò che fa scrobbling su Last.fm (Spotify, Apple Music con un'app scrobbler, YouTube Music…), anche con PinDrop chiusa."
+            "value" : "1. Su last.fm: Impostazioni → Applicazioni → Spotify Scrobbling → Connect (per Apple Music usa un'app scrobbler).\n2. Scrivi qui il tuo username Last.fm."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Escribe tu usuario de Last.fm. Funciona con todo lo que hace scrobbling en Last.fm (Spotify, Apple Music con una app de scrobbling, YouTube Music…), también con PinDrop cerrada."
+            "value" : "1. En last.fm: Ajustes → Aplicaciones → Spotify Scrobbling → Conectar (para Apple Music usa una app de scrobbling).\n2. Escribe aquí tu usuario de Last.fm."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Saisis ton nom d'utilisateur Last.fm. Ça marche avec tout ce qui scrobble sur Last.fm (Spotify, Apple Music via une app, YouTube Music…), même PinDrop fermée."
+            "value" : "1. Sur last.fm : Paramètres → Applications → Spotify Scrobbling → Connecter (pour Apple Music, utilise une app de scrobbling).\n2. Saisis ici ton nom Last.fm."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Gib deinen Last.fm-Namen ein. Funktioniert mit allem, was zu Last.fm scrobbelt (Spotify, Apple Music per Scrobbler-App, YouTube Music…), auch bei geschlossener App."
+            "value" : "1. Auf last.fm: Einstellungen → Anwendungen → Spotify Scrobbling → Verbinden (für Apple Music eine Scrobbler-App nutzen).\n2. Gib hier deinen Last.fm-Namen ein."
           }
         }
       }
@@ -15872,31 +15802,31 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Connect Spotify or Last.fm to show friends your song"
+            "value" : "Connect Last.fm to show friends your song"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Collega Spotify o Last.fm per mostrare agli amici cosa ascolti"
+            "value" : "Collega Last.fm per mostrare agli amici cosa ascolti"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conecta Spotify o Last.fm para mostrar tu canción"
+            "value" : "Conecta Last.fm para mostrar tu canción"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Connecte Spotify ou Last.fm pour montrer ton morceau"
+            "value" : "Connecte Last.fm pour montrer ton morceau"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Verbinde Spotify oder Last.fm, um deinen Song zu zeigen"
+            "value" : "Verbinde Last.fm, um deinen Song zu zeigen"
           }
         }
       }

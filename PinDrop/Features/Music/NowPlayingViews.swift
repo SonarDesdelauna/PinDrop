@@ -1,5 +1,3 @@
-import AuthenticationServices
-import CryptoKit
 import MediaPlayer
 import SwiftUI
 
@@ -62,72 +60,6 @@ struct MusicStatus: Decodable, Hashable, Sendable {
         case spotifyConnected = "spotify_connected"
         case spotifyError = "spotify_error"
         case lastfmUsername = "lastfm_username"
-    }
-}
-
-// MARK: - Spotify sign-in (PKCE, no secret on the device)
-
-enum SpotifyLink {
-    static let redirectURI = "pindrop://spotify-callback"
-    static let scopes = "user-read-currently-playing user-read-playback-state"
-
-    struct Tokens: Decodable, Sendable {
-        let access_token: String
-        let refresh_token: String?
-        let expires_in: Int
-    }
-
-    enum LinkError: Error {
-        case missingCode
-        case exchangeFailed
-    }
-
-    static func makeVerifier() -> String {
-        var bytes = [UInt8](repeating: 0, count: 48)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        return base64URL(Data(bytes))
-    }
-
-    static func challenge(for verifier: String) -> String {
-        base64URL(Data(SHA256.hash(data: Data(verifier.utf8))))
-    }
-
-    private static func base64URL(_ data: Data) -> String {
-        data.base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-    }
-
-    static func authorizeURL(clientID: String, verifier: String) -> URL? {
-        var components = URLComponents(string: "https://accounts.spotify.com/authorize")
-        components?.queryItems = [
-            URLQueryItem(name: "client_id", value: clientID),
-            URLQueryItem(name: "response_type", value: "code"),
-            URLQueryItem(name: "redirect_uri", value: redirectURI),
-            URLQueryItem(name: "code_challenge_method", value: "S256"),
-            URLQueryItem(name: "code_challenge", value: challenge(for: verifier)),
-            URLQueryItem(name: "scope", value: scopes),
-        ]
-        return components?.url
-    }
-
-    static func exchange(code: String, verifier: String, clientID: String) async throws -> Tokens {
-        var request = URLRequest(url: URL(string: "https://accounts.spotify.com/api/token")!)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        var form = URLComponents()
-        form.queryItems = [
-            URLQueryItem(name: "grant_type", value: "authorization_code"),
-            URLQueryItem(name: "code", value: code),
-            URLQueryItem(name: "redirect_uri", value: redirectURI),
-            URLQueryItem(name: "client_id", value: clientID),
-            URLQueryItem(name: "code_verifier", value: verifier),
-        ]
-        request.httpBody = form.percentEncodedQuery?.data(using: .utf8)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw LinkError.exchangeFailed }
-        return try JSONDecoder().decode(Tokens.self, from: data)
     }
 }
 
@@ -270,11 +202,10 @@ struct NowPlayingCard: View {
     }
 }
 
-/// Link Spotify / Last.fm / Apple Music.
+/// Link Last.fm (Spotify, YouTube Music, Apple Music via scrobbling) and Apple Music.
 struct MusicConnectView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.webAuthenticationSession) private var webAuthenticationSession
     @State private var lastfmName = ""
     @State private var isWorking = false
     @State private var message: String?
@@ -306,7 +237,6 @@ struct MusicConnectView: View {
                         NowPlayingCard(nowPlaying: mine)
                     }
 
-                    spotifyCard
                     lastfmCard
                     appleMusicCard
 
@@ -355,39 +285,6 @@ struct MusicConnectView: View {
                     .foregroundStyle(Theme.emerald)
             }
         }
-    }
-
-    private var spotifyCard: some View {
-        let connected = status?.spotifyConnected == true
-        return VStack(alignment: .leading, spacing: 10) {
-            sourceHeader("Spotify", tint: Color(hex: 0x1DB954), symbol: "waveform", connected: connected)
-            Text("music.spotify.hint")
-                .font(Theme.text(.caption))
-                .foregroundStyle(Theme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            if connected {
-                Button(role: .destructive) {
-                    run { try await appState.dataService.unlinkMusic("spotify") }
-                } label: {
-                    Text("music.disconnect")
-                }
-                .buttonStyle(SmallPillButtonStyle(isProminent: false))
-            } else if status?.spotifyClientID == nil {
-                Text("music.notConfigured")
-                    .font(Theme.text(.caption, weight: .semibold))
-                    .foregroundStyle(Theme.warning)
-            } else {
-                Button {
-                    connectSpotify()
-                } label: {
-                    Label("music.spotify.connect", systemImage: "link")
-                }
-                .buttonStyle(SmallPillButtonStyle(isProminent: true))
-                .disabled(isWorking)
-            }
-        }
-        .padding(16)
-        .glassCard()
     }
 
     private var lastfmCard: some View {
@@ -479,21 +376,6 @@ struct MusicConnectView: View {
             }
             await appState.reloadMusic()
             isWorking = false
-        }
-    }
-
-    private func connectSpotify() {
-        guard let clientID = status?.spotifyClientID else { return }
-        let verifier = SpotifyLink.makeVerifier()
-        guard let url = SpotifyLink.authorizeURL(clientID: clientID, verifier: verifier) else { return }
-        run {
-            let callback = try await webAuthenticationSession.authenticate(using: url, callbackURLScheme: "pindrop", preferredBrowserSession: .shared)
-            guard let code = URLComponents(url: callback, resolvingAgainstBaseURL: false)?
-                .queryItems?.first(where: { $0.name == "code" })?.value else { throw SpotifyLink.LinkError.missingCode }
-            let tokens = try await SpotifyLink.exchange(code: code, verifier: verifier, clientID: clientID)
-            guard let refresh = tokens.refresh_token else { throw SpotifyLink.LinkError.exchangeFailed }
-            try await appState.dataService.linkSpotify(refreshToken: refresh, accessToken: tokens.access_token, expiresIn: tokens.expires_in)
-            HapticManager.shared.success()
         }
     }
 }

@@ -1044,8 +1044,7 @@ async function renderMusicBox(box) {
     <p class="muted small" style="margin:4px 0 8px">Scrivi il tuo username Last.fm: funziona con tutto ciò che fa scrobbling (Spotify, YouTube Music, Apple Music con un'app scrobbler), anche con PinDrop chiusa.</p>
     ${ready ? `<div class="row"><div class="field grow"><input id="lastfmName" type="text" placeholder="username Last.fm" autocapitalize="none" value="${esc(lastfm)}"></div><button id="lastfmSave" class="primary" style="padding:15px">Salva</button></div>
     ${lastfm ? '<button class="ghost" id="lastfmOff">Scollega Last.fm</button>' : ""}` : '<p class="muted small">Non ancora disponibile: in arrivo.</p>'}
-    <div class="music-src" style="margin-top:12px"><b style="color:${MUSIC_TINT.spotify}">Spotify</b>${status?.spotify_connected ? '<span class="ok">✓ collegato</span>' : ""}</div>
-    <p class="muted small" style="margin:4px 0 0">${status?.spotify_connected ? "Collegato da iPhone: la tua musica appare anche qui." : "Su Android collega Spotify a Last.fm (Last.fm → Impostazioni → Applicazioni → Spotify) e inserisci qui il tuo username Last.fm."}</p>
+    <p class="muted small" style="margin:8px 0 0">Spotify: su last.fm vai in Impostazioni → Applicazioni → <b>Spotify Scrobbling</b> → Connect. Apple Music: usa un'app scrobbler collegata a Last.fm.</p>
     <p id="musicMsg" class="msg"></p>`;
   box.querySelector("#lastfmSave")?.addEventListener("click", async (e) => {
     const name = box.querySelector("#lastfmName").value.trim();
