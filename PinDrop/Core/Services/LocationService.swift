@@ -164,7 +164,9 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     func startLiveUpdates() {
         guard isAuthorized, !isLiveUpdating else { return }
         isLiveUpdating = true
-        manager.distanceFilter = 5
+        // Frequent, precise fixes while the map is open so your dot moves smoothly.
+        manager.desiredAccuracy = kCLLocationAccuracyBest
+        manager.distanceFilter = 2
         manager.startUpdatingLocation()
     }
 
@@ -174,6 +176,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         speed = nil
         course = nil
         manager.stopUpdatingLocation()
+        manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
         manager.distanceFilter = kCLDistanceFilterNone
     }
 

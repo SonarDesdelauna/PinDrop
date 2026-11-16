@@ -1,62 +1,110 @@
 import MapKit
+import QuartzCore
 import SwiftUI
 
-// MARK: - Tire marks
+// MARK: - Motion trail
 
-/// One short piece of a tire mark (left or right wheel) behind the moving user.
+/// One short piece of the glowing tail behind the moving user.
 struct SkidSegment: Identifiable {
     let id: Int
     let coordinates: [CLLocationCoordinate2D]
-    let opacity: Double
+    /// 1 right behind you → 0 at the end of the tail.
+    let fade: Double
 }
 
 enum SkidMarks {
-    /// Distance between the two wheel tracks, in meters.
-    static let trackHalfWidth: Double = 2.6
-    static let lifetime: TimeInterval = 90
-    static let maximumLength: Double = 350
+    /// The tail is short: a few seconds and a few dozen meters behind you.
+    static let lifetime: TimeInterval = 9
+    static let maximumLength: Double = 35
 
-    /// Builds two parallel tracks from the recent trail, fading with age and distance.
+    /// Builds a short comet tail from the recent trail, fading with age and distance.
     static func segments(trail: [TrailPoint], current: GeoPoint?, now: Date = .now) -> [SkidSegment] {
-        var points = trail
-        if let current {
-            points.append(TrailPoint(point: current, date: now))
+        guard let current else { return [] }
+        var points = trail.filter {
+            now.timeIntervalSince($0.date) < lifetime
+                && GeoClustering.haversineDistance(from: current, to: $0.point) < maximumLength
         }
+        points.append(TrailPoint(point: current, date: now))
         guard points.count >= 2 else { return [] }
         var result: [SkidSegment] = []
         for index in 0..<(points.count - 1) {
             let start = points[index]
             let end = points[index + 1]
-            let metersPerDegreeLatitude = 111_320.0
-            let metersPerDegreeLongitude = max(1, metersPerDegreeLatitude * cos(start.point.latitude * .pi / 180))
-            let east = (end.point.longitude - start.point.longitude) * metersPerDegreeLongitude
-            let north = (end.point.latitude - start.point.latitude) * metersPerDegreeLatitude
-            let length = (east * east + north * north).squareRoot()
-            guard length > 0.5, length < 120 else { continue }
-            let perpendicularEast = -north / length
-            let perpendicularNorth = east / length
-
+            let length = GeoClustering.haversineDistance(from: start.point, to: end.point)
+            guard length > 0.3, length < 40 else { continue }
             let age = now.timeIntervalSince(start.date)
-            let distance = current.map { GeoClustering.haversineDistance(from: $0, to: start.point) } ?? 0
+            let distance = GeoClustering.haversineDistance(from: current, to: start.point)
             let fade = max(0, 1 - age / lifetime) * max(0, 1 - distance / maximumLength)
-            guard fade > 0.02 else { continue }
-
-            for (side, sign) in [(0, 1.0), (1, -1.0)] {
-                let offsetNorth = perpendicularNorth * trackHalfWidth * sign
-                let offsetEast = perpendicularEast * trackHalfWidth * sign
-                let a = start.point.offsetBy(northMeters: offsetNorth, eastMeters: offsetEast)
-                let b = end.point.offsetBy(northMeters: offsetNorth, eastMeters: offsetEast)
-                result.append(SkidSegment(id: index * 2 + side, coordinates: [a.coordinate, b.coordinate], opacity: 0.85 * fade))
-            }
+            guard fade > 0.03 else { continue }
+            result.append(SkidSegment(id: index, coordinates: [start.point.coordinate, end.point.coordinate], fade: fade))
         }
         return result
     }
 }
 
+// MARK: - Far zoom location dot
+
+/// Your position when the map is zoomed far out: just a dot, like Apple Maps.
+struct MyLocationDotView: View {
+    @State private var isPulsing = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Theme.electricViolet.opacity(0.22))
+                .frame(width: 40, height: 40)
+                .scaleEffect(isPulsing ? 1.15 : 0.55)
+                .opacity(isPulsing ? 0 : 1)
+            Circle()
+                .fill(Color.white)
+                .frame(width: 22, height: 22)
+                .shadow(color: Color.black.opacity(0.28), radius: 4, y: 1)
+            Circle()
+                .fill(Theme.accentGradient)
+                .frame(width: 15, height: 15)
+        }
+        .frame(width: 44, height: 44)
+        .onAppear {
+            withAnimation(.easeOut(duration: 2).repeatForever(autoreverses: false)) {
+                isPulsing = true
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 // MARK: - Objects orbiting the globe
 
+/// Drives the orbits from the display refresh, also while the map is being dragged,
+/// so the objects keep their own pace whatever you do with the globe.
+@MainActor
+private final class OrbitTicker: NSObject {
+    private var link: CADisplayLink?
+    private var onTick: ((Double) -> Void)?
+
+    func start(_ handler: @escaping (Double) -> Void) {
+        onTick = handler
+        guard link == nil else { return }
+        let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+        link.add(to: .main, forMode: .common)
+        self.link = link
+    }
+
+    func stop() {
+        link?.invalidate()
+        link = nil
+        onTick = nil
+    }
+
+    @objc private func tick(_ link: CADisplayLink) {
+        onTick?(link.timestamp)
+    }
+}
+
 /// Playful objects circling the planet when the map is zoomed out to the 3D globe.
-/// Purely decorative: drawn over the map, ignored by hit testing and accessibility.
+/// They move on their own clock, fixed to the screen: turning or dragging the globe
+/// never moves them. Purely decorative, ignored by hit testing and accessibility.
 struct OrbitingObjectsView: View {
     private struct Orbit: Identifiable {
         let id: Int
@@ -78,23 +126,22 @@ struct OrbitingObjectsView: View {
     }
 
     @State private var orbits: [Orbit] = []
+    @State private var time: Double = 0
+    @State private var ticker = OrbitTicker()
 
     var body: some View {
         GeometryReader { proxy in
             let size = proxy.size
-            TimelineView(.animation) { context in
-                let time = context.date.timeIntervalSinceReferenceDate
-                ZStack {
-                    ForEach(orbits) { orbit in
-                        let placement = Self.placement(of: orbit, time: time, in: size)
-                        Text(verbatim: orbit.symbol)
-                            .font(.system(size: orbit.size))
-                            .rotationEffect(.radians(placement.angle))
-                            .scaleEffect(placement.scale)
-                            .opacity(placement.opacity)
-                            .shadow(color: Color.white.opacity(placement.isBehind ? 0 : 0.35), radius: 6)
-                            .position(placement.point)
-                    }
+            ZStack {
+                ForEach(orbits) { orbit in
+                    let placement = Self.placement(of: orbit, time: time, in: size)
+                    Text(verbatim: orbit.symbol)
+                        .font(.system(size: orbit.size))
+                        .rotationEffect(.radians(placement.angle))
+                        .scaleEffect(placement.scale)
+                        .opacity(placement.opacity)
+                        .shadow(color: Color.white.opacity(placement.isBehind ? 0 : 0.35), radius: 6)
+                        .position(placement.point)
                 }
             }
         }
@@ -104,6 +151,13 @@ struct OrbitingObjectsView: View {
             if orbits.isEmpty {
                 orbits = Self.randomOrbits()
             }
+            time = CACurrentMediaTime()
+            ticker.start { now in
+                time = now
+            }
+        }
+        .onDisappear {
+            ticker.stop()
         }
     }
 

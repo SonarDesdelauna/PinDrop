@@ -97,7 +97,17 @@ final class AppState {
     private(set) var placeNames: [String: String] = [:]
     /// Downloaded images keyed by storage path.
     private(set) var images: [String: Data] = [:]
-    private(set) var userLocation: GeoPoint?
+    private(set) var userLocation: GeoPoint? {
+        didSet {
+            if userLocation != oldValue {
+                glideDisplayLocation(to: userLocation)
+            }
+        }
+    }
+    /// Where your dot is drawn: glides smoothly between location fixes instead of jumping.
+    private(set) var displayLocation: GeoPoint?
+    @ObservationIgnored private var glideTask: Task<Void, Never>?
+    @ObservationIgnored private var lastLocationChange: Date?
     private(set) var isRefreshing = false
     private(set) var hasLoadedOnce = false
     private(set) var cameraTarget: CameraTarget?
@@ -544,12 +554,38 @@ final class AppState {
         try? await dataService.reportLocation(userLocation, permission: locationService.permissionName)
     }
 
+    /// Moves the drawn dot continuously to the new fix, over about the time between fixes.
+    private func glideDisplayLocation(to target: GeoPoint?) {
+        glideTask?.cancel()
+        let now = Date.now
+        let elapsed = lastLocationChange.map { now.timeIntervalSince($0) } ?? 1
+        lastLocationChange = now
+        guard let target, let start = displayLocation,
+              GeoClustering.haversineDistance(from: start, to: target) < 500 else {
+            displayLocation = target
+            return
+        }
+        let duration = min(max(elapsed, 0.35), 2.2)
+        glideTask = Task { [weak self] in
+            let begin = Date.now
+            while !Task.isCancelled {
+                let progress = min(1, Date.now.timeIntervalSince(begin) / duration)
+                self?.displayLocation = GeoPoint(
+                    latitude: start.latitude + (target.latitude - start.latitude) * progress,
+                    longitude: start.longitude + (target.longitude - start.longitude) * progress
+                )
+                if progress >= 1 { break }
+                try? await Task.sleep(for: .milliseconds(33))
+            }
+        }
+    }
+
     private func updateTrail(with point: GeoPoint) {
         let now = Date.now
         let isMoving = (locationService.speed ?? 0) >= 1.5
         var updated = trail.filter { now.timeIntervalSince($0.date) < 90 && GeoClustering.haversineDistance(from: $0.point, to: point) < 350 }
         if isMoving {
-            if let last = updated.last, GeoClustering.haversineDistance(from: last.point, to: point) < 4 {
+            if let last = updated.last, GeoClustering.haversineDistance(from: last.point, to: point) < 1.5 {
                 // Too close to the previous mark.
             } else {
                 updated.append(TrailPoint(point: point, date: now))

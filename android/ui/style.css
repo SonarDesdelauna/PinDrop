@@ -1,10 +1,10 @@
 :root {
-  --bg: #f5f5fa;
-  --surface: #ffffff;
-  --surface2: #ececf4;
+  --bg: #e6e6ee;
+  --surface: #f3f3f8;
+  --surface2: #dcdce6;
   --line: rgba(24, 24, 27, .08);
   --text: #18181b;
-  --muted: #6b6b7b;
+  --muted: #5c5c6c;
   --violet: #7c3aed;
   --purple: #a855f7;
   --emerald: #10b981;
@@ -327,3 +327,8 @@ button:active { transform: scale(.96); }
 .count { border-color: white; }
 .tag { color: var(--text); }
 .secret { color: #4c1d95; }
+
+/* Far zoom: just your dot */
+.m-dot { position: relative; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; }
+.m-dot .halo { position: absolute; inset: 0; border-radius: 50%; background: rgba(124, 58, 237, .25); animation: pulse 2s ease-out infinite; }
+.m-dot .core { width: 20px; height: 20px; border-radius: 50%; background: var(--grad); border: 3.5px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.3); }

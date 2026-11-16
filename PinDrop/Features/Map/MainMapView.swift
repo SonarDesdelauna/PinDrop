@@ -26,6 +26,8 @@ struct MainMapView: View {
     @State private var edgeZoomDelta: CGFloat = 0
     @State private var edgeZoomSide: HorizontalEdge?
     private static let globeAltitude: Double = 1_200_000
+    /// Zoomed out further than this (meters per screen point) only your dot is drawn.
+    private static let farZoomScale: Double = 160
     /// Your own photo is drawn on your avatar while you are this close to it.
     private static let ownPinMergeDistance: Double = 150
     /// Below this speed you are considered still (m/s).
@@ -228,9 +230,15 @@ struct MainMapView: View {
         return pow(2, (log2(metersPerPoint) * 4).rounded() / 4)
     }
 
+    /// Very far out (or on the globe) the map shows only your position, like Apple Maps.
+    private var isFarZoom: Bool {
+        isGlobeMode || layoutScale > Self.farZoomScale
+    }
+
     private var mapLayout: MapLayout {
         let scale = layoutScale
         var layout = MapLayout()
+        guard !isFarZoom else { return layout }
         var occupied: [(point: GeoPoint, radius: Double)] = []
         let me = appState.userLocation
         let meRadius: Double = 40
@@ -416,11 +424,12 @@ struct MainMapView: View {
     }
 
     private var mapLayer: some View {
-        let skidSegments = SkidMarks.segments(trail: appState.trail, current: currentSpeed == nil ? nil : appState.userLocation)
+        let farZoom = isFarZoom
+        let skidSegments = farZoom ? [] : SkidMarks.segments(trail: appState.trail, current: currentSpeed == nil ? nil : appState.displayLocation)
         let layout = mapLayout
         return Map(position: $cameraPosition, interactionModes: .all) {
             // Your evening trail only (friends never see it), following the streets.
-            let trailPoints = appState.myTrailPoints
+            let trailPoints = farZoom ? [] : appState.myTrailPoints
             if trailPoints.count >= 2 {
                 let coordinates = trailPoints.map(\.coordinate)
                 MapPolyline(coordinates: coordinates)
@@ -435,17 +444,23 @@ struct MainMapView: View {
                     )
             }
 
-            ForEach(nearbyLockedCapsules) { capsule in
+            ForEach(farZoom ? [] : nearbyLockedCapsules) { capsule in
                 MapCircle(center: capsule.coordinate, radius: GeoCapsule.unlockRadius)
                     .foregroundStyle(Color(hex: 0xF59E0B).opacity(0.16))
                     .stroke(Color(hex: 0xF59E0B).opacity(0.85), lineWidth: 1.5)
             }
 
+            // A short glowing comet tail behind you while you move.
             ForEach(skidSegments) { segment in
                 MapPolyline(coordinates: segment.coordinates)
                     .stroke(
-                        Color(red: 0.06, green: 0.06, blue: 0.07).opacity(segment.opacity),
-                        style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round)
+                        Theme.neonPurple.opacity(0.35 * segment.fade),
+                        style: StrokeStyle(lineWidth: 4 + 10 * segment.fade, lineCap: .round, lineJoin: .round)
+                    )
+                MapPolyline(coordinates: segment.coordinates)
+                    .stroke(
+                        Theme.electricViolet.opacity(0.25 + 0.7 * segment.fade),
+                        style: StrokeStyle(lineWidth: 1.5 + 4 * segment.fade, lineCap: .round, lineJoin: .round)
                     )
             }
 
@@ -519,7 +534,7 @@ struct MainMapView: View {
                 .annotationTitles(.hidden)
             }
 
-            if let event = appState.activeCrossPath {
+            if !farZoom, let event = appState.activeCrossPath {
                 Annotation("", coordinate: event.location.coordinate, anchor: .center) {
                     CrossPathMarkerView(friend: event.friend)
                 }
@@ -533,10 +548,13 @@ struct MainMapView: View {
                 .annotationTitles(.hidden)
             }
 
-            if let userLocation = appState.userLocation {
+            if let shown = appState.displayLocation {
                 let ownPins = mergedOwnPins
                 let ownPin = ownPins.first
-                Annotation("", coordinate: userLocation.coordinate, anchor: .center) {
+                Annotation("", coordinate: shown.coordinate, anchor: .center) {
+                    if farZoom {
+                        MyLocationDotView()
+                    } else {
                     MyLocationAnnotationView(
                         user: appState.currentUser,
                         ownPin: ownPin,
@@ -559,6 +577,7 @@ struct MainMapView: View {
                         },
                         onOpenPhoto: { _ in openOwnPins(ownPins) }
                     )
+                    }
                 }
                 .annotationTitles(.hidden)
             }
@@ -1033,7 +1052,7 @@ struct MainMapView: View {
         if isGlobeMode {
             .hybrid(elevation: .realistic, pointsOfInterest: .excludingAll, showsTraffic: false)
         } else {
-            .standard(elevation: .realistic, emphasis: .automatic, pointsOfInterest: .excludingAll, showsTraffic: false)
+            .standard(elevation: .realistic, emphasis: .muted, pointsOfInterest: .excludingAll, showsTraffic: false)
         }
     }
 

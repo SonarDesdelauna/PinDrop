@@ -1,3 +1,5 @@
+import CoreImage.CIFilterBuiltins
+import MapKit
 import SwiftUI
 import UIKit
 
@@ -17,6 +19,8 @@ struct FriendsDrawerView: View {
     @State private var profilePath: [UserProfile] = []
     @State private var showsSuggestions = false
     @State private var requestedSuggestions: Set<UUID> = []
+    @State private var isSettingsPresented = false
+    @State private var isQRPresented = false
     @FocusState private var isQueryFocused: Bool
 
     var body: some View {
@@ -24,34 +28,36 @@ struct FriendsDrawerView: View {
 
         NavigationStack(path: $profilePath) {
             ScrollView {
-                VStack(spacing: 18) {
-                    profileCard
-                    bestFriendCard
-                    addFriendCard
-                    contactsCard
+                VStack(spacing: 16) {
+                    profileHeader
+                    placesHeroCard
+                    HStack(alignment: .top, spacing: 12) {
+                        bestFriendTile
+                        viewsTile
+                    }
                     if !appState.friendsSnapshot.incoming.isEmpty {
                         incomingSection
                     }
+                    addFriendCard
+                    contactsCard
                     friendsSection
                     if !appState.friendsSnapshot.outgoing.isEmpty {
                         outgoingSection
                     }
-                    inviteCard
-                    settingsSection
-                    demoSection
-                    signOutButton
-                    footer
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 24)
+                .padding(.top, 4)
+                .padding(.bottom, 120)
             }
             .scrollIndicators(.hidden)
             .scrollDismissesKeyboard(.interactively)
             .refreshable {
                 await appState.refresh()
             }
-            .navigationTitle(Text("friends.title"))
+            .background(Theme.obsidian.ignoresSafeArea())
+            .overlay(alignment: .bottom) {
+                floatingActions
+            }
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: UserProfile.self) { user in
                 ProfileView(user: user)
@@ -59,16 +65,40 @@ struct FriendsDrawerView: View {
             .navigationDestination(isPresented: $isContactsPresented) {
                 ContactsView()
             }
+            .navigationDestination(isPresented: $isSettingsPresented) {
+                settingsScreen
+            }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        HapticManager.shared.tap()
+                        isSettingsPresented = true
+                    } label: {
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Theme.textPrimary)
+                    }
+                    .accessibilityLabel(Text("settings.title"))
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         dismiss()
                     } label: {
-                        Text("common.done")
-                            .fontWeight(.semibold)
+                        Image(systemName: "xmark")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(Theme.textPrimary)
                     }
+                    .accessibilityLabel(Text("common.close"))
                 }
             }
+        }
+        .sheet(isPresented: $isQRPresented) {
+            InviteQRSheet(
+                user: appState.currentUser,
+                payload: inviteQRPayload
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .preferredColorScheme(.light)
         .sheet(isPresented: $state.isProfileEditorPresented) {
@@ -109,79 +139,345 @@ struct FriendsDrawerView: View {
 
     // MARK: - Profile
 
-    private var profileCard: some View {
-        HStack(alignment: .top, spacing: 14) {
-            AvatarBadge(user: appState.currentUser, size: 62)
-                .padding(3)
-                .overlay {
-                    Circle().strokeBorder(
-                        appState.isUnlocked ? AnyShapeStyle(Theme.emeraldGradient) : AnyShapeStyle(Theme.accentGradient),
-                        lineWidth: 2
-                    )
+    private var profileHeader: some View {
+        VStack(spacing: 10) {
+            ZStack(alignment: .bottomTrailing) {
+                LiveAvatarView(user: appState.currentUser, size: 96)
+                    .padding(5)
+                    .overlay {
+                        Circle().strokeBorder(
+                            appState.isUnlocked ? AnyShapeStyle(Theme.emeraldGradient) : AnyShapeStyle(Theme.accentGradient),
+                            lineWidth: 3
+                        )
+                    }
+                    .shadow(color: Theme.electricViolet.opacity(0.25), radius: 16, y: 8)
+                Button {
+                    HapticManager.shared.tap()
+                    appState.isProfileEditorPresented = true
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color.white)
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(Theme.accentGradient))
+                        .overlay(Circle().strokeBorder(Theme.obsidian, lineWidth: 3))
                 }
-            VStack(alignment: .leading, spacing: 4) {
+                .buttonStyle(PressableButtonStyle())
+                .accessibilityLabel(Text("profile.edit"))
+            }
+            VStack(spacing: 3) {
                 HStack(spacing: 6) {
                     Text(verbatim: appState.currentUser.displayName)
-                        .font(Theme.text(.title3, weight: .bold))
+                        .font(Theme.text(.title2, weight: .heavy))
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
                     if !appState.currentUser.statusEmoji.isEmpty {
                         Text(verbatim: appState.currentUser.statusEmoji)
-                            .font(.system(size: 18))
+                            .font(.system(size: 20))
                     }
                 }
-                HStack(spacing: 8) {
-                    Text(verbatim: appState.currentUser.handle)
-                        .font(Theme.rounded(.subheadline, weight: .medium))
-                        .foregroundStyle(Theme.textSecondary)
-                    Label {
-                        Text("hud.profileViews \(appState.currentUser.viewCount)")
-                    } icon: {
-                        Image(systemName: "eye.fill")
-                    }
-                    .font(Theme.rounded(.caption, weight: .bold))
-                    .foregroundStyle(Theme.neonPurple)
-                    .lineLimit(1)
-                }
+                Text(verbatim: appState.currentUser.handle)
+                    .font(Theme.rounded(.subheadline, weight: .semibold))
+                    .foregroundStyle(Theme.textSecondary)
                 if !appState.currentUser.bio.isEmpty {
                     Text(verbatim: appState.currentUser.bio)
                         .font(Theme.text(.footnote))
                         .foregroundStyle(Theme.textPrimary.opacity(0.85))
+                        .multilineTextAlignment(.center)
                         .lineLimit(3)
+                        .padding(.top, 2)
                 }
-                if let ownPin = appState.ownActivePin {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(Theme.emerald)
-                            .frame(width: 7, height: 7)
-                        TimelineView(.periodic(from: .now, by: 30)) { context in
-                            Text("profile.status.live \(LocaleFormatter.remaining(until: ownPin.expiresAt, from: context.date))")
+            }
+            statusChip
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
+    }
+
+    @ViewBuilder
+    private var statusChip: some View {
+        Group {
+            if let ownPin = appState.ownActivePin {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(Theme.emerald)
+                        .frame(width: 7, height: 7)
+                    TimelineView(.periodic(from: .now, by: 30)) { context in
+                        Text("profile.status.live \(LocaleFormatter.remaining(until: ownPin.expiresAt, from: context.date))")
+                    }
+                }
+                .foregroundStyle(Theme.emerald)
+            } else {
+                HStack(spacing: 6) {
+                    Image(systemName: "lock.fill")
+                    Text("profile.status.locked")
+                }
+                .foregroundStyle(Theme.neonPurple)
+            }
+        }
+        .font(Theme.text(.caption, weight: .bold))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(Capsule().fill(Theme.surface))
+        .overlay(Capsule().strokeBorder(Theme.ink.opacity(0.06), lineWidth: 1))
+    }
+
+    // MARK: - Places hero
+
+    private var totalVisits: Int {
+        appState.places.reduce(0) { $0 + $1.visitCount }
+    }
+
+    /// The region that frames your saved places (or where you are).
+    private var placesRegion: MKCoordinateRegion? {
+        let points = appState.places.map(\.location)
+        guard !points.isEmpty else {
+            return appState.userLocation.map {
+                MKCoordinateRegion(center: $0.coordinate, latitudinalMeters: 2_500, longitudinalMeters: 2_500)
+            }
+        }
+        let latitudes = points.map(\.latitude)
+        let longitudes = points.map(\.longitude)
+        guard let minLat = latitudes.min(), let maxLat = latitudes.max(),
+              let minLon = longitudes.min(), let maxLon = longitudes.max() else { return nil }
+        let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2)
+        let span = MKCoordinateSpan(
+            latitudeDelta: max(0.012, (maxLat - minLat) * 1.6),
+            longitudeDelta: max(0.012, (maxLon - minLon) * 1.6)
+        )
+        return MKCoordinateRegion(center: center, span: span)
+    }
+
+    /// Emoji "stamps" of your favourite places, scattered on the card.
+    private var placeStamps: [String] {
+        let favourites = appState.places.sorted { $0.visitCount > $1.visitCount }.map(\.emoji)
+        var stamps: [String] = []
+        for emoji in favourites + ["📍", "☕️", "🍕", "🎉"] where !stamps.contains(emoji) {
+            stamps.append(emoji)
+            if stamps.count == 4 { break }
+        }
+        return stamps
+    }
+
+    private var placesHeroCard: some View {
+        Button {
+            HapticManager.shared.tap()
+            dismiss()
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(450))
+                appState.isPlacesPresented = true
+            }
+        } label: {
+            ZStack(alignment: .bottomLeading) {
+                if let region = placesRegion {
+                    Map(initialPosition: .region(region), interactionModes: []) {
+                        ForEach(appState.places) { place in
+                            Annotation("", coordinate: place.coordinate, anchor: .center) {
+                                Text(verbatim: place.emoji)
+                                    .font(.system(size: 14))
+                                    .frame(width: 26, height: 26)
+                                    .background(Circle().fill(Color.white))
+                                    .shadow(color: Color.black.opacity(0.18), radius: 3, y: 1)
+                            }
+                            .annotationTitles(.hidden)
                         }
                     }
-                    .font(Theme.text(.footnote, weight: .semibold))
-                    .foregroundStyle(Theme.emerald)
+                    .mapStyle(.standard(elevation: .flat, emphasis: .muted, pointsOfInterest: .excludingAll, showsTraffic: false))
+                    .allowsHitTesting(false)
                 } else {
-                    HStack(spacing: 6) {
-                        Image(systemName: "lock.fill")
-                        Text("profile.status.locked")
-                    }
-                    .font(Theme.text(.footnote, weight: .semibold))
-                    .foregroundStyle(Theme.neonPurple)
+                    Theme.accentGradient
                 }
+
+                LinearGradient(
+                    colors: [Theme.electricViolet.opacity(0.15), Theme.electricViolet.opacity(0.65), Theme.electricViolet.opacity(0.95)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+
+                // Stamps of your favourite places, like stickers on a passport.
+                ForEach(Array(placeStamps.enumerated()), id: \.offset) { index, emoji in
+                    let spots: [(CGFloat, CGFloat, Double)] = [(0.80, 0.22, -12), (0.62, 0.12, 10), (0.90, 0.50, 14), (0.70, 0.42, -6)]
+                    let spot = spots[index % spots.count]
+                    GeometryReader { proxy in
+                        Text(verbatim: emoji)
+                            .font(.system(size: index == 0 ? 40 : 30))
+                            .padding(8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(Color.white)
+                                    .shadow(color: Color.black.opacity(0.2), radius: 6, y: 3)
+                            )
+                            .rotationEffect(.degrees(spot.2))
+                            .position(x: proxy.size.width * spot.0, y: proxy.size.height * spot.1 + 20)
+                    }
+                    .allowsHitTesting(false)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("places.title")
+                        .font(Theme.text(.subheadline, weight: .bold))
+                        .foregroundStyle(Color.white.opacity(0.85))
+                    Text(verbatim: "\(appState.places.count)")
+                        .font(.system(size: 54, weight: .black, design: .rounded))
+                        .foregroundStyle(Color.white)
+                        .contentTransition(.numericText())
+                    HStack(spacing: 6) {
+                        Image(systemName: "figure.walk")
+                        Text("places.visits \(totalVisits)")
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .heavy))
+                    }
+                    .font(Theme.text(.footnote, weight: .bold))
+                    .foregroundStyle(Color.white.opacity(0.9))
+                }
+                .padding(18)
             }
-            .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
+            .frame(height: 196)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.35), lineWidth: 1)
+            }
+            .shadow(color: Theme.electricViolet.opacity(0.28), radius: 18, y: 10)
+        }
+        .buttonStyle(PressableButtonStyle(pressedScale: 0.98))
+    }
+
+    // MARK: - Tiles
+
+    private func tile<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            content()
+        }
+        .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
+        .padding(14)
+        .glassCard()
+    }
+
+    @ViewBuilder
+    private var bestFriendTile: some View {
+        if let best = appState.bestFriend {
             Button {
                 HapticManager.shared.tap()
-                appState.isProfileEditorPresented = true
+                profilePath.append(best.profile)
             } label: {
-                Image(systemName: "pencil")
+                tile {
+                    HStack(spacing: -10) {
+                        AvatarBadge(user: appState.currentUser, size: 40)
+                            .overlay(Circle().strokeBorder(Theme.surface, lineWidth: 2))
+                        AvatarBadge(user: best.profile, size: 40)
+                            .overlay(Circle().strokeBorder(Theme.surface, lineWidth: 2))
+                    }
+                    .overlay(alignment: .bottomTrailing) {
+                        Text(verbatim: best.time.isBestFriend ? "💜" : "🤝")
+                            .font(.system(size: 15))
+                            .offset(x: 6, y: 4)
+                    }
+                    Text(best.time.isBestFriend ? "bestFriend.card.title" : "bestFriend.card.closest")
+                        .font(Theme.text(.caption, weight: .bold))
+                        .foregroundStyle(Theme.neonPurple)
+                    Text(verbatim: best.profile.firstName)
+                        .font(Theme.text(.headline, weight: .bold))
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
+                    Text("bestFriend.together \(BestFriendProgressView.duration(best.time.seconds))")
+                        .font(Theme.text(.caption2, weight: .semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(2)
+                }
+                .multilineTextAlignment(.leading)
             }
-            .buttonStyle(CircleGlassButtonStyle(diameter: 40))
-            .accessibilityLabel(Text("profile.edit"))
+            .buttonStyle(PressableButtonStyle(pressedScale: 0.97))
+        } else {
+            tile {
+                Text(verbatim: "💜")
+                    .font(.system(size: 22))
+                    .frame(width: 40, height: 40)
+                    .background(Circle().fill(Theme.electricViolet.opacity(0.16)))
+                Text("bestFriend.card.title")
+                    .font(Theme.text(.caption, weight: .bold))
+                    .foregroundStyle(Theme.neonPurple)
+                Text("bestFriend.card.empty")
+                    .font(Theme.text(.caption2))
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(4)
+            }
         }
-        .padding(16)
-        .glassCard()
+    }
+
+    private var viewsTile: some View {
+        tile {
+            Image(systemName: "eye.fill")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(Color.white)
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(Theme.emeraldGradient))
+            Text("drawer.views.title")
+                .font(Theme.text(.caption, weight: .bold))
+                .foregroundStyle(Theme.emerald)
+            Text(verbatim: "\(appState.currentUser.viewCount)")
+                .font(.system(size: 26, weight: .black, design: .rounded))
+                .foregroundStyle(Theme.textPrimary)
+            Text("friends.section \(appState.friends.count)")
+                .font(Theme.text(.caption2, weight: .semibold))
+                .foregroundStyle(Theme.textSecondary)
+        }
+    }
+
+    // MARK: - Floating actions
+
+    private var inviteQRPayload: String {
+        "\(AppLinks.appStoreURL.absoluteString)?invite=\(appState.currentUser.inviteCode)"
+    }
+
+    private var floatingActions: some View {
+        HStack(spacing: 12) {
+            ShareLink(item: inviteMessage) {
+                Label("drawer.share", systemImage: "square.and.arrow.up")
+                    .font(Theme.text(.subheadline, weight: .bold))
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 22)
+                    .frame(height: 52)
+                    .background(Capsule().fill(Theme.accentGradient))
+                    .shadow(color: Theme.electricViolet.opacity(0.4), radius: 14, y: 6)
+            }
+            .buttonStyle(PressableButtonStyle())
+            Button {
+                HapticManager.shared.tap()
+                isQRPresented = true
+            } label: {
+                Image(systemName: "qrcode")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(Theme.textPrimary)
+                    .frame(width: 52, height: 52)
+                    .glassCircle()
+            }
+            .buttonStyle(PressableButtonStyle())
+            .accessibilityLabel(Text("drawer.qr"))
+        }
+        .padding(.bottom, 12)
+    }
+
+    // MARK: - Settings screen
+
+    private var settingsScreen: some View {
+        ScrollView {
+            VStack(spacing: 18) {
+                inviteCard
+                settingsSection
+                demoSection
+                signOutButton
+                footer
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
+        }
+        .scrollIndicators(.hidden)
+        .background(Theme.obsidian.ignoresSafeArea())
+        .navigationTitle(Text("settings.title"))
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     // MARK: - Contacts
@@ -384,66 +680,6 @@ struct FriendsDrawerView: View {
         }
     }
 
-    // MARK: - Best friend
-
-    @ViewBuilder
-    private var bestFriendCard: some View {
-        if let best = appState.bestFriend {
-            Button {
-                HapticManager.shared.tap()
-                profilePath.append(best.profile)
-            } label: {
-                HStack(spacing: 12) {
-                    AvatarBadge(user: best.profile, size: 48)
-                        .overlay(alignment: .bottomTrailing) {
-                            Text(verbatim: best.time.isBestFriend ? "💜" : "🤝")
-                                .font(.system(size: 15))
-                                .offset(x: 4, y: 4)
-                        }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(best.time.isBestFriend ? "bestFriend.card.title" : "bestFriend.card.closest")
-                            .font(Theme.text(.caption, weight: .bold))
-                            .foregroundStyle(Theme.neonPurple)
-                        Text(verbatim: best.profile.displayName)
-                            .font(Theme.text(.headline, weight: .bold))
-                            .foregroundStyle(Theme.textPrimary)
-                            .lineLimit(1)
-                        Text("bestFriend.together \(BestFriendProgressView.duration(best.time.seconds))")
-                            .font(Theme.text(.caption))
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-                    .multilineTextAlignment(.leading)
-                    Spacer(minLength: 8)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(Theme.neonPurple)
-                }
-                .padding(14)
-                .glassCard()
-            }
-            .buttonStyle(PressableButtonStyle(pressedScale: 0.98))
-        } else {
-            HStack(spacing: 12) {
-                Text(verbatim: "💜")
-                    .font(.system(size: 24))
-                    .frame(width: 48, height: 48)
-                    .background(Circle().fill(Theme.electricViolet.opacity(0.18)))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("bestFriend.card.title")
-                        .font(Theme.text(.caption, weight: .bold))
-                        .foregroundStyle(Theme.neonPurple)
-                    Text("bestFriend.card.empty")
-                        .font(Theme.text(.footnote))
-                        .foregroundStyle(Theme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(14)
-            .glassCard()
-        }
-    }
-
     private func sendRequest() {
         let query = trimmedQuery
         guard !query.isEmpty, !isSendingRequest else { return }
@@ -605,7 +841,7 @@ struct FriendsDrawerView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("friends.section \(appState.friends.count)")
-                    .font(Theme.text(.headline, weight: .bold))
+                    .font(Theme.text(.title3, weight: .heavy))
                     .foregroundStyle(Theme.textPrimary)
                 Spacer(minLength: 8)
                 if appState.activeFriendsCount > 0 {
@@ -978,5 +1214,78 @@ struct FriendsDrawerView: View {
         .foregroundStyle(Theme.textSecondary)
         .frame(maxWidth: .infinity)
         .padding(.top, 4)
+    }
+}
+
+/// Your invite as a QR code: a friend scans it and finds you on PinDrop.
+private struct InviteQRSheet: View {
+    let user: UserProfile
+    let payload: String
+    @State private var didCopy = false
+
+    private var qrImage: UIImage? {
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(payload.utf8)
+        filter.correctionLevel = "M"
+        guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 12, y: 12)),
+              let cgImage = CIContext().createCGImage(output, from: output.extent) else { return nil }
+        return UIImage(cgImage: cgImage)
+    }
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Text("drawer.qr.title")
+                .font(Theme.text(.title3, weight: .heavy))
+                .foregroundStyle(Theme.textPrimary)
+                .padding(.top, 24)
+            ZStack {
+                if let qrImage {
+                    Image(uiImage: qrImage)
+                        .interpolation(.none)
+                        .resizable()
+                        .scaledToFit()
+                        .padding(18)
+                }
+                AvatarBadge(user: user, size: 52)
+                    .padding(4)
+                    .background(Circle().fill(Color.white))
+            }
+            .frame(width: 240, height: 240)
+            .background(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(Color.white))
+            .overlay {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .strokeBorder(Theme.accentGradient, lineWidth: 3)
+            }
+            .shadow(color: Theme.electricViolet.opacity(0.25), radius: 18, y: 8)
+
+            Button {
+                UIPasteboard.general.string = user.inviteCode
+                HapticManager.shared.success()
+                withAnimation(Theme.spring) { didCopy = true }
+            } label: {
+                HStack(spacing: 8) {
+                    Text(verbatim: user.inviteCode)
+                        .font(.system(.title3, design: .monospaced, weight: .bold))
+                    Image(systemName: didCopy ? "checkmark" : "doc.on.doc.fill")
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                .foregroundStyle(Theme.textPrimary)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 10)
+                .glassCapsule()
+            }
+            .buttonStyle(PressableButtonStyle())
+            .accessibilityLabel(Text("friends.invite.copy"))
+
+            Text("drawer.qr.subtitle")
+                .font(Theme.text(.footnote))
+                .foregroundStyle(Theme.textSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity)
+        .background(Theme.obsidian.ignoresSafeArea())
+        .preferredColorScheme(.light)
     }
 }

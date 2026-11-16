@@ -340,16 +340,16 @@ function addOverlayLayers() {
     } catch (_) {}
   }
   map.addSource("pd-zones", { type: "geojson", data: emptyCollection() });
-  map.addLayer({ id: "pd-zones-fill", type: "fill", source: "pd-zones", paint: { "fill-color": "#f59e0b", "fill-opacity": 0.14 } });
-  map.addLayer({ id: "pd-zones-line", type: "line", source: "pd-zones", paint: { "line-color": "#f59e0b", "line-width": 1.6, "line-opacity": 0.85 } });
+  map.addLayer({ id: "pd-zones-fill", type: "fill", source: "pd-zones", minzoom: FAR_ZOOM, paint: { "fill-color": "#f59e0b", "fill-opacity": 0.14 } });
+  map.addLayer({ id: "pd-zones-line", type: "line", source: "pd-zones", minzoom: FAR_ZOOM, paint: { "line-color": "#f59e0b", "line-width": 1.6, "line-opacity": 0.85 } });
   map.addSource("pd-trail", { type: "geojson", data: emptyCollection() });
   map.addLayer({
-    id: "pd-trail-glow", type: "line", source: "pd-trail",
+    id: "pd-trail-glow", type: "line", source: "pd-trail", minzoom: FAR_ZOOM,
     layout: { "line-cap": "round", "line-join": "round" },
     paint: { "line-color": "#a855f7", "line-width": 12, "line-opacity": 0.3, "line-blur": 5 },
   });
   map.addLayer({
-    id: "pd-trail", type: "line", source: "pd-trail",
+    id: "pd-trail", type: "line", source: "pd-trail", minzoom: FAR_ZOOM,
     layout: { "line-cap": "round", "line-join": "round" },
     paint: { "line-color": "#7c3aed", "line-width": 4, "line-dasharray": [2, 1.6] },
   });
@@ -469,6 +469,10 @@ function syncCandidates() {
 
 // ───────────── Layout: true positions, merge what would overlap ─────────────
 
+/** Zoomed out further than this, only your own dot is drawn (like Apple Maps). */
+const FAR_ZOOM = 7;
+const isFarZoom = () => map.getZoom() < FAR_ZOOM;
+
 function computeLayout() {
   const P = (o) => map.project([o.lon, o.lat]);
   const gap = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -478,7 +482,8 @@ function computeLayout() {
   const nearMe = (p, r) => meP && gap(meP, p) < ME_R + r;
   const occupied = meP ? [{ p: meP, r: ME_R }] : [];
   const fits = (p, r) => occupied.every((o) => gap(o.p, p) >= o.r + r);
-  const L = { companions: [], groups: [], clusters: [], underMe: [], capsules: [], capsulesUnderMe: [] };
+  const L = { far: isFarZoom(), companions: [], groups: [], clusters: [], underMe: [], capsules: [], capsulesUnderMe: [] };
+  if (L.far) return L;
 
   for (const f of freshLocations()) {
     f.p = P(f);
@@ -510,6 +515,7 @@ function computeLayout() {
 
 function layoutKey(L) {
   return JSON.stringify([
+    L.far,
     state.myPos && [state.myPos.lat.toFixed(5), state.myPos.lon.toFixed(5)],
     L.companions.map((p) => p.id),
     L.groups.map((g) => g.map((m) => m.user_id + m.updated_at)),
@@ -544,6 +550,15 @@ function renderMarkers(force) {
   state.layoutKey = key;
   markers.forEach((m) => m.remove());
   markers = [];
+
+  if (L.far) {
+    if (state.myPos) {
+      const dot = addMarker(element('<div class="m-dot"><div class="halo"></div><div class="core"></div></div>'), [state.myPos.lon, state.myPos.lat], "center");
+      dot.getElement().style.zIndex = 5;
+    }
+    updateStatus();
+    return;
+  }
 
   for (const ev of activeCrossEvents()) {
     addMarker(element(`<div class="m-cross"><div class="wave"></div><div class="wave"></div><div class="wave"></div><div class="center">💫</div></div>`), [ev.lon, ev.lat], "center");

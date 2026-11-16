@@ -6,10 +6,10 @@ enum Theme {
 
     /// Primary background: a soft cool white (the app is always light).
     /// (Screens forced dark, like the camera, keep the original dark values.)
-    static let obsidian = adaptive(light: 0xF5F5FA, dark: 0x09090B)
+    static let obsidian = adaptive(light: 0xE6E6EE, dark: 0x09090B)
     /// Elevated surfaces and cards (white), used at `surfaceOpacity` over a material.
-    static let surface = adaptive(light: 0xFFFFFF, dark: 0x121216)
-    static let surfaceOpacity: Double = 0.72
+    static let surface = adaptive(light: 0xF3F3F8, dark: 0x121216)
+    static let surfaceOpacity: Double = 0.8
     /// Ink for hairlines and subtle fills: dark on light screens, white on dark ones.
     static let ink = adaptive(light: 0x18181B, dark: 0xFFFFFF)
 
@@ -43,7 +43,7 @@ enum Theme {
     /// Primary text (#18181B).
     static let textPrimary = adaptive(light: 0x18181B, dark: 0xFAFAFA)
     /// Secondary text (#6B6B7B).
-    static let textSecondary = adaptive(light: 0x6B6B7B, dark: 0xA1A1AA)
+    static let textSecondary = adaptive(light: 0x5C5C6C, dark: 0xA1A1AA)
     static let danger = Color(hex: 0xF43F5E)
     static let warning = Color(hex: 0xF59E0B)
 
