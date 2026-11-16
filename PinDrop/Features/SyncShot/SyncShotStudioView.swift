@@ -179,7 +179,6 @@ struct SyncShotStudioView: View {
             }
         }
         .aspectRatio(3.0 / 4.0, contentMode: .fit)
-        .frame(maxWidth: .infinity)
         .background(Theme.surface)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sheet, style: .continuous))
         .overlay {
@@ -209,6 +208,8 @@ struct SyncShotStudioView: View {
             .padding(12)
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.6), value: countdownValue)
+        // Always a true 3:4 box, centered when space is short.
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Result

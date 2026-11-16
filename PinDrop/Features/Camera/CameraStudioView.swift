@@ -195,7 +195,6 @@ struct CameraStudioView: View {
             }
         }
         .aspectRatio(3.0 / 4.0, contentMode: .fit)
-        .frame(maxWidth: .infinity)
         .background(Theme.surface)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sheet, style: .continuous))
         .overlay {
@@ -214,6 +213,8 @@ struct CameraStudioView: View {
             .glassCapsule()
             .padding(12)
         }
+        // Always a true 3:4 box (what the shot will be), centered when space is short.
+        .frame(maxWidth: .infinity)
     }
 
     private var permissionPlaceholder: some View {
