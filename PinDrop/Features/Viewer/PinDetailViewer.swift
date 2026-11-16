@@ -12,6 +12,10 @@ struct PinDetailViewer: View {
     @State private var etaPin: PhotoPin?
     @State private var dragOffset: CGFloat = 0
     @State private var didSetInitialIndex = false
+    @State private var replyText = ""
+    @State private var isOpeningGroup = false
+    @State private var replySentPinID: UUID?
+    @FocusState private var isReplyFocused: Bool
 
     private let storyDuration: Double = 6
     private let timerStep: Double = 0.05
@@ -293,6 +297,7 @@ struct PinDetailViewer: View {
     private func footer(for pin: PhotoPin) -> some View {
         VStack(spacing: 12) {
             reactionsRow(for: pin)
+            quickChatBar(for: pin)
             HStack(spacing: 10) {
                 if !appState.isOwn(pin) {
                     Button {
@@ -330,6 +335,129 @@ struct PinDetailViewer: View {
                     .glassCapsule()
                     .fixedSize()
                 }
+            }
+        }
+    }
+
+    /// Other people in this hub (not you).
+    private var hubPeople: [UserProfile] {
+        var seen: Set<UUID> = [appState.currentUser.id]
+        var people: [UserProfile] = []
+        for pin in pins where !seen.contains(pin.author.id) {
+            seen.insert(pin.author.id)
+            people.append(pin.author)
+        }
+        return people
+    }
+
+    /// "Reply to Name..." for a single pin, "Open group chat (N here)" for a hub.
+    @ViewBuilder
+    private func quickChatBar(for pin: PhotoPin) -> some View {
+        let people = hubPeople
+        if people.count >= 2 {
+            Button {
+                openHubChat(with: people)
+            } label: {
+                HStack(spacing: 8) {
+                    if isOpeningGroup {
+                        ProgressView().tint(Theme.neonPurple)
+                    } else {
+                        Image(systemName: "bubble.left.and.bubble.right.fill")
+                    }
+                    Text("viewer.groupChat \(people.count + 1)")
+                        .lineLimit(1)
+                }
+                .font(Theme.rounded(.subheadline, weight: .bold))
+                .foregroundStyle(Theme.textPrimary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 13)
+                .glassCapsule(interactive: true)
+            }
+            .buttonStyle(PressableButtonStyle(pressedScale: 0.97))
+            .disabled(isOpeningGroup)
+        } else if !appState.isOwn(pin) {
+            HStack(spacing: 8) {
+                TextField("", text: $replyText, prompt: Text("viewer.reply.placeholder \(pin.author.firstName)").foregroundStyle(Theme.textSecondary))
+                    .font(Theme.text(.subheadline))
+                    .foregroundStyle(Theme.textPrimary)
+                    .focused($isReplyFocused)
+                    .submitLabel(.send)
+                    .onSubmit { sendReply(to: pin) }
+                if replySentPinID == pin.id {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Theme.emerald)
+                        .transition(.scale.combined(with: .opacity))
+                } else if !replyText.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Button {
+                        sendReply(to: pin)
+                    } label: {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 14, weight: .heavy))
+                            .foregroundStyle(Color.white)
+                            .frame(width: 30, height: 30)
+                            .background(Theme.accentGradient, in: Circle())
+                    }
+                    .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .padding(.leading, 16)
+            .padding(.trailing, 6)
+            .frame(height: 44)
+            .glassCapsule()
+            .animation(Theme.spring, value: replyText.isEmpty)
+            .animation(Theme.spring, value: replySentPinID)
+        }
+    }
+
+    private func sendReply(to pin: PhotoPin) {
+        let text = replyText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        replyText = ""
+        isReplyFocused = false
+        let social = appState.social
+        let place = appState.placeName(for: pin) ?? ""
+        let thumb = appState.images[pin.thumbPath]
+        let isDemo = appState.isDemoFriend(pin.author.id)
+        Task {
+            do {
+                let threadID = try await social.openDirectChat(with: pin.author, isDemo: isDemo)
+                var outgoing = OutgoingMessage(kind: .pinReply, body: text)
+                outgoing.attachmentBucket = "pins"
+                outgoing.attachmentPath = pin.thumbPath
+                outgoing.refID = pin.id
+                outgoing.placeName = place
+                if let thumb {
+                    social.storeImage(thumb, for: "pins/\(pin.thumbPath)")
+                }
+                try await social.send(outgoing, to: threadID)
+                replySentPinID = pin.id
+                try? await Task.sleep(for: .seconds(1.8))
+                if replySentPinID == pin.id { replySentPinID = nil }
+            } catch {
+                HapticManager.shared.error()
+                appState.showToast(.warning, title: String(localized: "chat.send.failed"), subtitle: error.localizedDescription)
+            }
+        }
+    }
+
+    /// A live 24 h group chat with everyone who dropped a photo in this hub.
+    private func openHubChat(with people: [UserProfile]) {
+        guard !isOpeningGroup else { return }
+        isOpeningGroup = true
+        HapticManager.shared.tap()
+        let place = currentPin.flatMap { appState.placeName(for: $0) } ?? String(localized: "chat.hub.defaultTitle")
+        let social = appState.social
+        let isDemo = people.contains { appState.isDemoFriend($0.id) }
+        Task {
+            defer { isOpeningGroup = false }
+            do {
+                let id = try await social.createGroup(title: place, emoji: "📍", members: people, ephemeralHours: 24, isDemo: isDemo)
+                close()
+                social.openThreadID = id
+                social.isChatListPresented = true
+            } catch {
+                HapticManager.shared.error()
+                appState.showToast(.warning, title: String(localized: "toast.error.title"), subtitle: error.localizedDescription)
             }
         }
     }
@@ -438,7 +566,7 @@ struct PinDetailViewer: View {
         while !Task.isCancelled {
             try? await Task.sleep(for: .milliseconds(Int(timerStep * 1_000)))
             if Task.isCancelled { return }
-            guard etaPin == nil else { continue }
+            guard etaPin == nil, !isReplyFocused else { continue }
             segmentProgress += timerStep / storyDuration
             if segmentProgress >= 1 {
                 if currentIndex < pins.count - 1 {

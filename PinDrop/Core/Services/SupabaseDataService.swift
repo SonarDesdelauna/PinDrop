@@ -839,4 +839,209 @@ final class SupabaseDataService: Sendable {
             .in("id", values: ids)
             .execute()
     }
+
+    // MARK: - Chats
+
+    func fetchChatThreads() async throws -> [ChatThread] {
+        try await client
+            .rpc("my_chat_threads")
+            .execute()
+            .value
+    }
+
+    func fetchMessages(threadID: UUID, limit: Int = 120) async throws -> [ChatMessage] {
+        let rows: [ChatMessage] = try await client
+            .from("chat_messages")
+            .select(ChatMessage.selectColumns)
+            .eq("thread_id", value: threadID)
+            .order("created_at", ascending: false)
+            .limit(limit)
+            .execute()
+            .value
+        return rows.reversed()
+    }
+
+    func openDirectChat(with friendID: UUID) async throws -> UUID {
+        try await client
+            .rpc("open_direct_chat", params: ["friend": friendID])
+            .execute()
+            .value
+    }
+
+    func createGroupChat(title: String, emoji: String, memberIDs: [UUID], ephemeralHours: Int) async throws -> UUID {
+        struct Params: Encodable, Sendable {
+            let title: String
+            let emoji: String
+            let members: [UUID]
+            let ephemeral_hours: Int
+        }
+        return try await client
+            .rpc("create_group_chat", params: Params(title: title, emoji: emoji, members: memberIDs, ephemeral_hours: ephemeralHours))
+            .execute()
+            .value
+    }
+
+    func markChatRead(threadID: UUID) async throws {
+        try await client
+            .rpc("mark_chat_read", params: ["thread": threadID])
+            .execute()
+    }
+
+    func leaveChat(threadID: UUID) async throws {
+        try await client
+            .rpc("leave_chat", params: ["thread": threadID])
+            .execute()
+    }
+
+    /// Uploads the photo (if any) to the chat bucket, then inserts the message.
+    func sendMessage(_ outgoing: OutgoingMessage, to threadID: UUID) async throws -> ChatMessage {
+        struct NewMessage: Encodable, Sendable {
+            let id: UUID
+            let thread_id: UUID
+            let kind: String
+            let body: String
+            let attachment_bucket: String?
+            let attachment_path: String?
+            let ref_id: UUID?
+            let place_name: String?
+            let latitude: Double?
+            let longitude: Double?
+            let eta_minutes: Int?
+        }
+        let messageID = UUID()
+        var bucket = outgoing.attachmentBucket
+        var path = outgoing.attachmentPath
+        if let photo = outgoing.photo {
+            let photoPath = "\(Self.storageID(threadID))/\(Self.storageID(messageID)).jpg"
+            _ = try await client.storage.from("chat").upload(
+                photoPath,
+                data: photo,
+                options: FileOptions(cacheControl: "86400", contentType: "image/jpeg", upsert: false)
+            )
+            bucket = "chat"
+            path = photoPath
+        }
+        let row = NewMessage(
+            id: messageID,
+            thread_id: threadID,
+            kind: outgoing.kind.rawValue,
+            body: String(outgoing.body.prefix(2000)),
+            attachment_bucket: bucket,
+            attachment_path: path,
+            ref_id: outgoing.refID,
+            place_name: outgoing.placeName.map { String($0.prefix(120)) },
+            latitude: outgoing.latitude,
+            longitude: outgoing.longitude,
+            eta_minutes: outgoing.etaMinutes
+        )
+        return try await client
+            .from("chat_messages")
+            .insert(row)
+            .select(ChatMessage.selectColumns)
+            .single()
+            .execute()
+            .value
+    }
+
+    func setChatReaction(_ emoji: String, on messageID: UUID, add: Bool) async throws {
+        if add {
+            struct NewReaction: Encodable, Sendable {
+                let message_id: UUID
+                let emoji: String
+            }
+            try await client
+                .from("chat_reactions")
+                .insert(NewReaction(message_id: messageID, emoji: emoji))
+                .execute()
+        } else {
+            let uid = try await currentUserID()
+            try await client
+                .from("chat_reactions")
+                .delete()
+                .eq("message_id", value: messageID)
+                .eq("user_id", value: uid)
+                .eq("emoji", value: emoji)
+                .execute()
+        }
+    }
+
+    /// Downloads an image from any private bucket, by "bucket/path" key.
+    func loadImage(key: String) async throws -> Data {
+        guard let slash = key.firstIndex(of: "/") else { throw DataServiceError.invalidPayload }
+        let bucket = String(key[..<slash])
+        let path = String(key[key.index(after: slash)...])
+        return try await client.storage.from(bucket).download(path: path)
+    }
+
+    // MARK: - Stories
+
+    func fetchStories() async throws -> [StoryItem] {
+        try await client
+            .from("stories")
+            .select(StoryItem.selectColumns)
+            .gt("expires_at", value: Self.nowISO)
+            .order("created_at", ascending: true)
+            .execute()
+            .value
+    }
+
+    /// Uploads the photo and creates a story that lasts 24 hours.
+    func publishStory(photo: Data, overlayText: String, overlayY: Double, locationTag: String?) async throws -> StoryItem {
+        struct NewStory: Encodable, Sendable {
+            let id: UUID
+            let image_path: String
+            let overlay_text: String
+            let overlay_y: Double
+            let location_tag: String?
+        }
+        let uid = try await currentUserID()
+        let storyID = UUID()
+        let path = "\(Self.storageID(uid))/\(Self.storageID(storyID)).jpg"
+        _ = try await client.storage.from("stories").upload(
+            path,
+            data: photo,
+            options: FileOptions(cacheControl: "86400", contentType: "image/jpeg", upsert: false)
+        )
+        do {
+            return try await client
+                .from("stories")
+                .insert(NewStory(
+                    id: storyID,
+                    image_path: path,
+                    overlay_text: String(overlayText.prefix(80)),
+                    overlay_y: min(max(overlayY, 0), 1),
+                    location_tag: locationTag.map { String($0.prefix(120)) }
+                ))
+                .select(StoryItem.selectColumns)
+                .single()
+                .execute()
+                .value
+        } catch {
+            _ = try? await client.storage.from("stories").remove(paths: [path])
+            throw error
+        }
+    }
+
+    func markStoryViewed(_ storyID: UUID, liked: Bool) async throws {
+        struct View: Encodable, Sendable {
+            let story_id: UUID
+            let viewer_id: UUID
+            let liked: Bool
+        }
+        let uid = try await currentUserID()
+        try await client
+            .from("story_views")
+            .upsert(View(story_id: storyID, viewer_id: uid, liked: liked), onConflict: "story_id,viewer_id")
+            .execute()
+    }
+
+    func deleteStory(_ story: StoryItem) async throws {
+        try await client
+            .from("stories")
+            .delete()
+            .eq("id", value: story.id)
+            .execute()
+        let path = story.imageKey.replacingOccurrences(of: "stories/", with: "")
+        _ = try? await client.storage.from("stories").remove(paths: [path])
+    }
 }

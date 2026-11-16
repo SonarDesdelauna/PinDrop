@@ -35,6 +35,7 @@ struct MainMapView: View {
 
     var body: some View {
         @Bindable var state = appState
+        @Bindable var social = appState.social
 
         ZStack {
             mapLayer
@@ -73,6 +74,15 @@ struct MainMapView: View {
         .animation(Theme.spring, value: appState.toast)
         .fullScreenCover(isPresented: $state.isCameraPresented) {
             CameraStudioView()
+        }
+        .fullScreenCover(item: storyViewerBinding) { start in
+            StoryViewerView(startAuthorID: start.id)
+        }
+        .sheet(isPresented: $social.isChatListPresented) {
+            ChatListView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(Theme.Radius.sheet)
         }
         .fullScreenCover(item: $state.syncShotContext) { context in
             SyncShotStudioView(context: context)
@@ -718,13 +728,14 @@ struct MainMapView: View {
             HStack(alignment: .top, spacing: 10) {
                 if let speed = currentSpeed {
                     speedPill(speed)
-                        .padding(.top, 62)
+                        .padding(.top, 136)
                         .transition(.move(edge: .leading).combined(with: .opacity))
                 }
                 Spacer(minLength: 0)
                 VStack(spacing: 10) {
                     profileButton
                     bellButton
+                    chatButton
                     recapButton
                 }
             }
@@ -734,8 +745,56 @@ struct MainMapView: View {
             }
             .padding(.horizontal, 60)
             .padding(.top, 8)
+            if !isFarZoom {
+                StoriesBarView()
+                    .padding(.top, 46)
+                    .padding(.trailing, 58)
+                    .padding(.leading, -16)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
         }
         .frame(maxWidth: .infinity)
+        .animation(Theme.spring, value: isFarZoom)
+    }
+
+    /// The story viewer is open while a starting person is set.
+    private var storyViewerBinding: Binding<StoryViewerStart?> {
+        Binding(
+            get: { appState.social.storyViewerStart.map { StoryViewerStart(id: $0) } },
+            set: { appState.social.storyViewerStart = $0?.id }
+        )
+    }
+
+    /// Opens the conversations, with the unread count.
+    private var chatButton: some View {
+        let unread = appState.social.totalUnread
+        return Button {
+            HapticManager.shared.tap()
+            appState.social.isChatListPresented = true
+        } label: {
+            Image(systemName: "bubble.left.and.bubble.right.fill")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Theme.neonPurple)
+                .symbolEffect(.bounce, value: unread)
+                .frame(width: 48, height: 48)
+                .contentShape(Circle())
+                .glassCircle(interactive: true)
+                .overlay(alignment: .topTrailing) {
+                    if unread > 0 {
+                        Text(min(unread, 99), format: .number)
+                            .font(Theme.roundedFixed(11, weight: .heavy))
+                            .foregroundStyle(Color.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Theme.accentGradient))
+                            .offset(x: 4, y: -3)
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                }
+        }
+        .buttonStyle(PressableButtonStyle())
+        .accessibilityLabel(Text("chat.title"))
+        .accessibilityValue(Text("notifications.unread \(unread)"))
     }
 
     /// "N profile views", like the counter next to the avatar.
@@ -1099,4 +1158,9 @@ struct ToastView: View {
         .glassCard(cornerRadius: 22)
         .accessibilityElement(children: .combine)
     }
+}
+
+/// Identifiable wrapper for the person whose stories the viewer opens on.
+struct StoryViewerStart: Identifiable, Hashable {
+    let id: UUID
 }

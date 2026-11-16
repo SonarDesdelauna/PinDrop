@@ -188,6 +188,8 @@ final class AppState {
 
     let dataService: SupabaseDataService
     let locationService: LocationService
+    /// Chats and stories.
+    let social: SocialStore
 
     @ObservationIgnored private var sessionUserID: UUID?
     @ObservationIgnored private var refreshQueued = false
@@ -207,6 +209,7 @@ final class AppState {
     init(dataService: SupabaseDataService, locationService: LocationService) {
         self.dataService = dataService
         self.locationService = locationService
+        self.social = SocialStore(dataService: dataService)
         // Background fixes ("Always" permission) are shared with friends even when the app
         // was relaunched by iOS and no screen is showing.
         locationService.backgroundFixHandler = { [dataService, locationService] point in
@@ -963,6 +966,7 @@ final class AppState {
         isProfileEditorPresented = false
         hasLoadedOnce = false
         pendingFocus = nil
+        social.reset()
         ImageCache.removeAll()
         WidgetSyncService.shared.clear()
     }
@@ -1023,6 +1027,10 @@ final class AppState {
             prefetchThumbnails()
             syncWidget()
             resolvePendingFocus(dropIfMissing: true)
+            if isDemoModeEnabled, !social.hasDemo {
+                social.installDemo(currentUser: fetchedProfile)
+            }
+            await social.refresh(userID: fetchedProfile.id)
         } catch is CancellationError {
             return
         } catch {
@@ -1072,6 +1080,8 @@ final class AppState {
                 tick += 1
                 if tick.isMultiple(of: 2) {
                     await self.refresh()
+                } else if self.currentUser.isSetup {
+                    await self.social.refresh(userID: self.currentUser.id)
                 }
             }
         }
@@ -1932,12 +1942,14 @@ extension AppState {
         UserDefaults.standard.set(enabled, forKey: Self.demoDefaultsKey)
         if enabled {
             buildDemo()
+            social.installDemo(currentUser: currentUser)
             HapticManager.shared.success()
             if let anchor = demo?.anchor {
                 focusMap(on: anchor, spanMeters: 2_400)
             }
         } else {
             removeDemo()
+            social.removeDemo()
             HapticManager.shared.selection()
         }
     }
