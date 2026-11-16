@@ -5,12 +5,15 @@ import UIKit
 /// SwiftUI wrapper around `AVCaptureVideoPreviewLayer`.
 struct CameraPreviewLayer: UIViewRepresentable {
     let session: AVCaptureSession
+    /// Receives the preview layer (used to orient photos and videos like the preview).
+    var onLayer: ((AVCaptureVideoPreviewLayer) -> Void)?
 
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
         view.backgroundColor = .black
         view.previewLayer.session = session
         view.previewLayer.videoGravity = .resizeAspectFill
+        onLayer?(view.previewLayer)
         return view
     }
 

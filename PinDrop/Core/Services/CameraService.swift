@@ -49,6 +49,8 @@ final class CaptureEngine: NSObject, @unchecked Sendable, AVCaptureVideoDataOutp
     /// Sample buffers and the recorder live on this queue only.
     private let recordQueue = DispatchQueue(label: "com.pindrop.camera.record", qos: .userInitiated)
     private var recorder: VideoRecorder?
+    /// Rotation for photos and videos, given by the main actor from the preview (portrait = 90).
+    private var captureAngle: CGFloat = 90
     private var currentInput: AVCaptureDeviceInput?
     private var processors: [Int64: PhotoCaptureProcessor] = [:]
     private var isOutputConfigured = false
@@ -141,7 +143,10 @@ final class CaptureEngine: NSObject, @unchecked Sendable, AVCaptureVideoDataOutp
         }
 
         session.beginConfiguration()
-        defer { session.commitConfiguration() }
+        var isCommitted = false
+        defer {
+            if !isCommitted { session.commitConfiguration() }
+        }
 
         if !isOutputConfigured {
             session.sessionPreset = .photo
@@ -164,6 +169,9 @@ final class CaptureEngine: NSObject, @unchecked Sendable, AVCaptureVideoDataOutp
         currentInput = newInput
 
         photoOutput.maxPhotoQualityPrioritization = .balanced
+        session.commitConfiguration()
+        isCommitted = true
+        // Connections exist only once the new input is committed: orient them afterwards.
         configurePhotoConnection(position: device.position)
         configureVideoConnection(position: device.position)
         applyDeviceDefaults(device)
@@ -178,24 +186,35 @@ final class CaptureEngine: NSObject, @unchecked Sendable, AVCaptureVideoDataOutp
 
     private func configurePhotoConnection(position: AVCaptureDevice.Position) {
         guard let connection = photoOutput.connection(with: .video) else { return }
-        if connection.isVideoRotationAngleSupported(90) {
-            connection.videoRotationAngle = 90
-        }
+        orient(connection, position: position)
+    }
+
+    /// Same orientation as the preview; the front camera is mirrored like a selfie.
+    private func orient(_ connection: AVCaptureConnection, position: AVCaptureDevice.Position) {
         if connection.isVideoMirroringSupported {
             connection.automaticallyAdjustsVideoMirroring = false
             connection.isVideoMirrored = position == .front
+        }
+        if connection.isVideoRotationAngleSupported(captureAngle) {
+            connection.videoRotationAngle = captureAngle
+        } else if connection.isVideoRotationAngleSupported(90) {
+            connection.videoRotationAngle = 90
+        }
+    }
+
+    /// Called when the camera or the preview changes.
+    func setCaptureAngle(_ angle: CGFloat) {
+        queue.async {
+            self.captureAngle = angle
+            let position = self.currentInput?.device.position ?? .back
+            self.configurePhotoConnection(position: position)
+            self.configureVideoConnection(position: position)
         }
     }
 
     private func configureVideoConnection(position: AVCaptureDevice.Position) {
         guard let connection = videoOutput.connection(with: .video) else { return }
-        if connection.isVideoRotationAngleSupported(90) {
-            connection.videoRotationAngle = 90
-        }
-        if connection.isVideoMirroringSupported {
-            connection.automaticallyAdjustsVideoMirroring = false
-            connection.isVideoMirrored = position == .front
-        }
+        orient(connection, position: position)
     }
 
     // MARK: Video recording
@@ -296,7 +315,7 @@ final class CaptureEngine: NSObject, @unchecked Sendable, AVCaptureVideoDataOutp
         device.unlockForConfiguration()
     }
 
-    private static func device(for position: AVCaptureDevice.Position) -> AVCaptureDevice? {
+    static func device(for position: AVCaptureDevice.Position) -> AVCaptureDevice? {
         AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position)
             ?? AVCaptureDevice.default(for: .video)
     }
@@ -443,6 +462,23 @@ final class CameraService {
 
     let engine = CaptureEngine()
     @ObservationIgnored private var isConfigured = false
+    @ObservationIgnored private weak var previewLayer: AVCaptureVideoPreviewLayer?
+    @ObservationIgnored private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
+
+    /// The preview tells which way is "up" for each camera (front and back differ).
+    func attachPreview(_ layer: AVCaptureVideoPreviewLayer) {
+        previewLayer = layer
+        updateRotation()
+    }
+
+    private func updateRotation() {
+        guard let device = CaptureEngine.device(for: position) else { return }
+        let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: previewLayer)
+        rotationCoordinator = coordinator
+        // The UI is always portrait: use the preview angle so the shot matches what you see.
+        let angle = previewLayer == nil ? 90 : coordinator.videoRotationAngleForHorizonLevelPreview
+        engine.setCaptureAngle(angle)
+    }
 
     var session: AVCaptureSession { engine.session }
     var isFlashAvailable: Bool { capabilities?.hasFlash ?? false }
@@ -485,6 +521,7 @@ final class CameraService {
             do {
                 capabilities = try await engine.configure(position: position)
                 isConfigured = true
+                updateRotation()
             } catch {
                 status = .failed(error.localizedDescription)
                 return
@@ -508,6 +545,7 @@ final class CameraService {
             let newCapabilities = try await engine.configure(position: next)
             capabilities = newCapabilities
             position = next
+            updateRotation()
             zoomFactor = 1
             if !newCapabilities.hasFlash {
                 flashMode = .off

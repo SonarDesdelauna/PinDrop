@@ -177,7 +177,7 @@ struct CameraStudioView: View {
             case .failed(let message):
                 failurePlaceholder(message: message)
             default:
-                CameraPreviewLayer(session: camera.session)
+                CameraPreviewLayer(session: camera.session) { camera.attachPreview($0) }
                     .gesture(
                         MagnifyGesture()
                             .onChanged { value in

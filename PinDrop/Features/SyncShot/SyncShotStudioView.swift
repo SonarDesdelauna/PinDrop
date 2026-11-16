@@ -150,7 +150,7 @@ struct SyncShotStudioView: View {
                     .foregroundStyle(Theme.textSecondary)
                     .padding(24)
             default:
-                CameraPreviewLayer(session: camera.session)
+                CameraPreviewLayer(session: camera.session) { camera.attachPreview($0) }
                     .gesture(
                         MagnifyGesture()
                             .onChanged { value in
