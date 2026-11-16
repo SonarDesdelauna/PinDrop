@@ -63,10 +63,6 @@ struct MusicStatus: Decodable, Hashable, Sendable {
         case spotifyError = "spotify_error"
         case lastfmUsername = "lastfm_username"
     }
-
-    var hasAnySource: Bool {
-        spotifyConnected || lastfmUsername != nil || AppleMusicReporter.isEnabled
-    }
 }
 
 // MARK: - Spotify sign-in (PKCE, no secret on the device)
