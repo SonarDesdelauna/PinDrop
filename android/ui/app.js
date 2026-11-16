@@ -30,6 +30,8 @@ const ICON = {
 };
 
 const state = {
+  music: new Map(),
+  displayPos: null,
   me: null,
   pins: [],
   friends: [],
@@ -56,6 +58,43 @@ const state = {
 
 let map;
 let markers = [];
+let meMarker = null;
+let glideFrame = 0;
+let lastFixAt = 0;
+
+/** Moves your dot continuously to the new fix, over about the time between fixes. */
+function glideTo(target) {
+  const now = performance.now();
+  const elapsed = lastFixAt ? now - lastFixAt : 1000;
+  lastFixAt = now;
+  const from = state.displayPos || target;
+  if (!state.displayPos || distance(from, target) > 500) {
+    state.displayPos = { ...target };
+    meMarker?.setLngLat([target.lon, target.lat]);
+    return;
+  }
+  const duration = Math.min(Math.max(elapsed, 400), 3200);
+  cancelAnimationFrame(glideFrame);
+  const start = performance.now();
+  const step = (t) => {
+    const k = Math.min(1, (t - start) / duration);
+    state.displayPos = { lat: from.lat + (target.lat - from.lat) * k, lon: from.lon + (target.lon - from.lon) * k };
+    meMarker?.setLngLat([state.displayPos.lon, state.displayPos.lat]);
+    if (k < 1) glideFrame = requestAnimationFrame(step);
+  };
+  glideFrame = requestAnimationFrame(step);
+}
+
+/** Frequent fixes while the app is visible, only to move your dot smoothly. */
+async function trackPosition() {
+  if (document.hidden || !state.myPos) return;
+  const pos = await currentPosition();
+  if (!pos) return;
+  const moved = distance(state.myPos, pos);
+  state.myPos = pos;
+  glideTo(pos);
+  if (moved > 15) scheduleLayout();
+}
 let stream = null;
 
 // ───────────── Helpers ─────────────
@@ -516,7 +555,8 @@ function computeLayout() {
 function layoutKey(L) {
   return JSON.stringify([
     L.far,
-    state.myPos && [state.myPos.lat.toFixed(5), state.myPos.lon.toFixed(5)],
+    state.myPos && [state.myPos.lat.toFixed(4), state.myPos.lon.toFixed(4)],
+    [...state.music.entries()].map(([id, m]) => id + m.track + isLive(m)),
     L.companions.map((p) => p.id),
     L.groups.map((g) => g.map((m) => m.user_id + m.updated_at)),
     L.clusters.map((c) => c.pins.map((p) => p.id + (pinThumbURL(p) ? 1 : 0) + (isLocked(p) ? "l" : ""))),
@@ -550,11 +590,14 @@ function renderMarkers(force) {
   state.layoutKey = key;
   markers.forEach((m) => m.remove());
   markers = [];
+  meMarker = null;
 
   if (L.far) {
     if (state.myPos) {
-      const dot = addMarker(element('<div class="m-dot"><div class="halo"></div><div class="core"></div></div>'), [state.myPos.lon, state.myPos.lat], "center");
+      const at = state.displayPos || state.myPos;
+      const dot = addMarker(element('<div class="m-dot"><div class="halo"></div><div class="core"></div></div>'), [at.lon, at.lat], "center");
       dot.getElement().style.zIndex = 5;
+      meMarker = dot;
     }
     updateStatus();
     return;
@@ -585,7 +628,8 @@ function renderMarkers(force) {
     const anyOnline = profiles.some((p) => state.online.has(p.id));
     const label = profiles.length > 2 ? `${firstName(profiles[0])} +${profiles.length - 1}` : profiles.map(firstName).join(" & ");
     const avatars = profiles.slice(0, 4).map((p) => avatarHTML(p)).join("") + (profiles.length > 4 ? `<div class="avatar" style="background:var(--grad)">+${profiles.length - 4}</div>` : "");
-    const html = `<div class="m-group"><div class="stack${profiles.length > 1 ? " many" : ""}">${avatars}</div><div class="tag">${anyOnline ? '<span class="dot"></span>' : ""}${esc(label)}${anyOnline ? "" : ` · ${esc(ago(newest.updated_at))}`}</div></div>`;
+    const song = profiles.length === 1 ? liveMusic(profiles[0].id) : null;
+    const html = `<div class="m-group"><div class="stack${profiles.length > 1 ? " many" : ""}">${avatars}</div><div class="tag">${anyOnline ? '<span class="dot"></span>' : ""}${esc(label)}${anyOnline ? "" : ` · ${esc(ago(newest.updated_at))}`}</div>${song ? `<div class="tag music"><span class="eq"><i></i><i></i><i></i></span>${esc(song.track)}</div>` : ""}</div>`;
     addMarker(element(html, () => (g.length === 1 ? openFriend(g[0].profile) : openGroup(g))), [newest.lon, newest.lat]);
   }
 
@@ -605,8 +649,10 @@ function renderMarkers(force) {
     el.querySelector('[data-act="own"]')?.addEventListener("click", (e) => { e.stopPropagation(); openPins(own); });
     el.querySelector('[data-act="others"]')?.addEventListener("click", (e) => { e.stopPropagation(); openPins(others); });
     el.querySelector('[data-act="capsule"]')?.addEventListener("click", (e) => { e.stopPropagation(); openCapsule(L.capsulesUnderMe[0]); });
-    const marker = addMarker(el, [state.myPos.lon, state.myPos.lat], "center");
+    const at = state.displayPos || state.myPos;
+    const marker = addMarker(el, [at.lon, at.lat], "center");
     marker.getElement().style.zIndex = 5;
+    meMarker = marker;
   }
   updateStatus();
 }
@@ -676,7 +722,7 @@ async function ensurePermission(request) {
 
 async function currentPosition() {
   try {
-    const pos = await invoke("plugin:geolocation|get_current_position", { options: { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 } });
+    const pos = await invoke("plugin:geolocation|get_current_position", { options: { enableHighAccuracy: true, timeout: 15000, maximumAge: 1500 } });
     return { lat: pos.coords.latitude, lon: pos.coords.longitude };
   } catch (_) {
     return new Promise((resolve) => {
@@ -696,6 +742,7 @@ async function updateLocation(request = false) {
   const pos = await currentPosition();
   if (!pos) return;
   state.myPos = pos;
+  glideTo(pos);
   if (!centered && map) {
     centered = true;
     map.jumpTo({ center: [pos.lon, pos.lat], zoom: 16 });
@@ -821,6 +868,9 @@ async function startMain() {
   setInterval(refresh, 15000);
   setInterval(refreshCross, 30000);
   setInterval(() => updateLocation(false), 12000);
+  setInterval(trackPosition, 2500);
+  loadMusic();
+  setInterval(loadMusic, 30000);
   setInterval(() => loadFriends().catch(() => {}), 60000);
   setInterval(pollInvites, 4000);
   setInterval(updateStatus, 30000);
@@ -871,7 +921,9 @@ function renderFriendsList() {
   list.innerHTML = state.friends.map((f) => {
     const loc = located.get(f.id);
     const where = loc && state.myPos ? ` · ${distanceText(distance(state.myPos, loc))}` : "";
-    const status = state.online.has(f.id) ? `<span style="color:var(--emerald2)">● online</span>${where}` : loc ? `📍 ${esc(ago(loc.updated_at))}${where}` : `@${esc(f.username)}`;
+    const song = liveMusic(f.id);
+    const status = song ? `<span class="music-line">♫ ${esc(song.track)}${song.artist ? " · " + esc(song.artist) : ""}</span>`
+      : state.online.has(f.id) ? `<span style="color:var(--emerald2)">● online</span>${where}` : loc ? `📍 ${esc(ago(loc.updated_at))}${where}` : `@${esc(f.username)}`;
     return `<div class="person" data-friend="${f.id}">${avatarHTML(f)}<div class="info"><b>${esc(f.display_name)} ${esc(f.status_emoji || "")}</b><span>${status}</span></div>${candidates.has(f.id) ? `<button class="mini sync-chip" data-sync="${f.id}">⚡ Sync</button>` : ""}</div>`;
   }).join("") + state.sent.map((p) => `<div class="person">${avatarHTML(p)}<div class="info"><b>${esc(p.display_name)}</b><span>Richiesta in attesa</span></div></div>`).join("")
     || `<p class="muted small">Ancora nessun amico: aggiungili con il loro username.</p>`;
@@ -918,6 +970,7 @@ function openFriend(friend) {
   const where = loc ? `${state.online.has(friend.id) ? "online ora" : "visto " + ago(loc.updated_at)}${state.myPos ? " · a " + distanceText(distance(state.myPos, loc)) : ""}` : "posizione non condivisa";
   openSheet(`<div class="sheet-head"><div class="author">${avatarHTML(friend)}<div>${esc(friend.display_name)} ${esc(friend.status_emoji || "")}<small>@${esc(friend.username)} · ${esc(where)}</small></div></div><button class="close-x" data-close>${ICON.x}</button></div>
     ${friend.bio ? `<p class="muted" style="margin:0">${esc(friend.bio)}</p>` : ""}
+    ${musicCardHTML(state.music.get(friend.id))}
     ${canSync ? `<button class="primary emerald" data-act="sync">⚡ Sync Shot con ${esc(firstName(friend))}</button>` : `<p class="muted small" style="margin:0">⚡ Il Sync Shot si attiva quando siete a meno di ${SYNC_M} m.</p>`}
     <div class="row">${loc ? `<button class="ghost grow" data-act="map">📍 Mostra sulla mappa</button>` : ""}${pin && !isLocked(pin) ? `<button class="ghost grow" data-act="pin">🖼️ La sua foto</button>` : ""}</div>`, (root) => {
     root.querySelector('[data-act="sync"]')?.addEventListener("click", () => startSync(friend));
@@ -940,13 +993,80 @@ $("profileBtn").addEventListener("click", () => {
   openSheet(`<div class="sheet-head"><div class="author">${avatarHTML(me)}<div>${esc(me.display_name)}<small>@${esc(me.username)}</small></div></div><button class="close-x" data-close>${ICON.x}</button></div>
     ${me.invite_code ? `<div class="stat"><span>CODICE INVITO</span><b style="letter-spacing:2px">${esc(me.invite_code)}</b></div>` : ""}
     <p class="muted small" style="margin:0">Gli amici possono aggiungerti con @${esc(me.username)}${me.invite_code ? " o con il codice invito" : ""}.</p>
+    <h3>🎵 Cosa stai ascoltando</h3>
+    ${musicCardHTML(state.music.get(me.id))}
+    <div id="musicBox"><p class="muted small">Caricamento…</p></div>
     <button class="danger" data-act="logout">Esci da PinDrop</button>`, (root) => {
+    renderMusicBox(root.querySelector("#musicBox"));
     root.querySelector('[data-act="logout"]').addEventListener("click", async () => {
       await invoke("sign_out").catch(() => {});
       location.reload();
     });
   });
 });
+
+// ───────────── Now playing ─────────────
+
+const MUSIC_TINT = { spotify: "#1db954", lastfm: "#d51007", apple: "#fa2d48" };
+const MUSIC_NAME = { spotify: "Spotify", lastfm: "Last.fm", apple: "Apple Music" };
+const isLive = (m) => !!m && m.is_playing && Date.now() - new Date(m.updated_at).getTime() < 6 * 60 * 1000;
+const liveMusic = (id) => { const m = state.music.get(id); return isLive(m) ? m : null; };
+
+async function loadMusic() {
+  try {
+    const rows = await invoke("fetch_now_playing");
+    const next = new Map((rows || []).map((r) => [r.user_id, r]));
+    const changed = JSON.stringify([...next]) !== JSON.stringify([...state.music]);
+    state.music = next;
+    if (changed) scheduleLayout(true);
+  } catch (_) {}
+}
+
+function musicCardHTML(m) {
+  if (!m) return "";
+  const live = isLive(m);
+  const tint = MUSIC_TINT[m.provider] || "var(--violet)";
+  const art = m.artwork_url ? `<img src="${esc(m.artwork_url)}">` : "♫";
+  const open = m.track_url ? `<a class="music-play" href="${esc(m.track_url)}" target="_blank" style="background:${tint}">▶</a>` : "";
+  return `<div class="music-card"><div class="music-art" style="background:${tint}">${art}</div><div class="info">
+    <span style="color:${tint}">${live ? '<span class="eq"><i></i><i></i><i></i></span> In ascolto' : "Ultimo ascolto · " + esc(ago(m.updated_at))}</span>
+    <b>${esc(m.track)}</b><small>${esc(m.artist)}</small></div>${open}</div>`;
+}
+
+async function renderMusicBox(box) {
+  if (!box) return;
+  let status = null;
+  try { status = await invoke("music_status"); } catch (_) {}
+  const lastfm = status?.lastfm_username || "";
+  const ready = status?.lastfm_available;
+  box.innerHTML = `
+    <div class="music-src"><b style="color:${MUSIC_TINT.lastfm}">Last.fm</b>${lastfm ? '<span class="ok">✓ collegato</span>' : ""}</div>
+    <p class="muted small" style="margin:4px 0 8px">Scrivi il tuo username Last.fm: funziona con tutto ciò che fa scrobbling (Spotify, YouTube Music, Apple Music con un'app scrobbler), anche con PinDrop chiusa.</p>
+    ${ready ? `<div class="row"><div class="field grow"><input id="lastfmName" type="text" placeholder="username Last.fm" autocapitalize="none" value="${esc(lastfm)}"></div><button id="lastfmSave" class="primary" style="padding:15px">Salva</button></div>
+    ${lastfm ? '<button class="ghost" id="lastfmOff">Scollega Last.fm</button>' : ""}` : '<p class="muted small">Non ancora disponibile: in arrivo.</p>'}
+    <div class="music-src" style="margin-top:12px"><b style="color:${MUSIC_TINT.spotify}">Spotify</b>${status?.spotify_connected ? '<span class="ok">✓ collegato</span>' : ""}</div>
+    <p class="muted small" style="margin:4px 0 0">${status?.spotify_connected ? "Collegato da iPhone: la tua musica appare anche qui." : "Su Android collega Spotify a Last.fm (Last.fm → Impostazioni → Applicazioni → Spotify) e inserisci qui il tuo username Last.fm."}</p>
+    <p id="musicMsg" class="msg"></p>`;
+  box.querySelector("#lastfmSave")?.addEventListener("click", async (e) => {
+    const name = box.querySelector("#lastfmName").value.trim();
+    if (name.length < 2) return;
+    e.currentTarget.disabled = true;
+    try {
+      await invoke("link_lastfm", { username: name });
+      await loadMusic();
+      toast("Last.fm collegato 🎵");
+      renderMusicBox(box);
+    } catch (err) {
+      box.querySelector("#musicMsg").textContent = "Username non valido o Last.fm non raggiungibile.";
+      e.currentTarget.disabled = false;
+    }
+  });
+  box.querySelector("#lastfmOff")?.addEventListener("click", async () => {
+    await invoke("unlink_music", { provider: "lastfm" }).catch(() => {});
+    await loadMusic();
+    renderMusicBox(box);
+  });
+}
 
 // ───────────── Camera ─────────────
 

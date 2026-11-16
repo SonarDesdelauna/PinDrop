@@ -453,6 +453,58 @@ final class SupabaseDataService: Sendable {
             .value
     }
 
+    // MARK: - Now playing
+
+    func fetchNowPlaying() async throws -> [NowPlaying] {
+        try await client
+            .from("now_playing")
+            .select("user_id, provider, track, artist, album, artwork_url, track_url, is_playing, updated_at")
+            .execute()
+            .value
+    }
+
+    func musicStatus() async throws -> MusicStatus {
+        try await client
+            .rpc("music_status")
+            .execute()
+            .value
+    }
+
+    func linkSpotify(refreshToken: String, accessToken: String, expiresIn: Int) async throws {
+        struct Params: Encodable, Sendable {
+            let refresh_token: String
+            let access_token: String
+            let expires_in: Int
+        }
+        try await client
+            .rpc("link_spotify", params: Params(refresh_token: refreshToken, access_token: accessToken, expires_in: expiresIn))
+            .execute()
+    }
+
+    func linkLastfm(_ username: String) async throws {
+        try await client
+            .rpc("link_lastfm", params: ["username": username])
+            .execute()
+    }
+
+    func unlinkMusic(_ provider: String) async throws {
+        try await client
+            .rpc("unlink_music", params: ["provider": provider])
+            .execute()
+    }
+
+    func reportNowPlaying(track: String, artist: String, album: String, isPlaying: Bool) async throws {
+        struct Params: Encodable, Sendable {
+            let track: String
+            let artist: String
+            let album: String
+            let is_playing: Bool
+        }
+        try await client
+            .rpc("report_now_playing", params: Params(track: track, artist: artist, album: album, is_playing: isPlaying))
+            .execute()
+    }
+
     func fetchLocationPermissions() async throws -> [LocationPermissionRow] {
         let uid = try await currentUserID()
         return try await client

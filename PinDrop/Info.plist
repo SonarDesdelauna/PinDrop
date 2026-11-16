@@ -87,5 +87,7 @@
 	<string>Light</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>PinDrop reads the Live Photo you choose so it can play on your profile.</string>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>PinDrop shows your friends the song you are playing in Apple Music, only if you turn it on.</string>
 </dict>
 </plist>

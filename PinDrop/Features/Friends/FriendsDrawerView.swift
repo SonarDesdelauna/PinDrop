@@ -21,6 +21,7 @@ struct FriendsDrawerView: View {
     @State private var requestedSuggestions: Set<UUID> = []
     @State private var isSettingsPresented = false
     @State private var isQRPresented = false
+    @State private var isMusicPresented = false
     @FocusState private var isQueryFocused: Bool
 
     var body: some View {
@@ -33,7 +34,7 @@ struct FriendsDrawerView: View {
                     placesHeroCard
                     HStack(alignment: .top, spacing: 12) {
                         bestFriendTile
-                        viewsTile
+                        musicTile
                     }
                     if !appState.friendsSnapshot.incoming.isEmpty {
                         incomingSection
@@ -91,6 +92,10 @@ struct FriendsDrawerView: View {
                     .accessibilityLabel(Text("common.close"))
                 }
             }
+        }
+        .sheet(isPresented: $isMusicPresented) {
+            MusicConnectView()
+                .presentationDetents([.large])
         }
         .sheet(isPresented: $isQRPresented) {
             InviteQRSheet(
@@ -176,9 +181,19 @@ struct FriendsDrawerView: View {
                             .font(.system(size: 20))
                     }
                 }
-                Text(verbatim: appState.currentUser.handle)
-                    .font(Theme.rounded(.subheadline, weight: .semibold))
-                    .foregroundStyle(Theme.textSecondary)
+                HStack(spacing: 8) {
+                    Text(verbatim: appState.currentUser.handle)
+                        .font(Theme.rounded(.subheadline, weight: .semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                    Label {
+                        Text("hud.profileViews \(appState.currentUser.viewCount)")
+                    } icon: {
+                        Image(systemName: "eye.fill")
+                    }
+                    .font(Theme.rounded(.caption, weight: .bold))
+                    .foregroundStyle(Theme.neonPurple)
+                    .lineLimit(1)
+                }
                 if !appState.currentUser.bio.isEmpty {
                     Text(verbatim: appState.currentUser.bio)
                         .font(Theme.text(.footnote))
@@ -404,6 +419,59 @@ struct FriendsDrawerView: View {
                     .lineLimit(4)
             }
         }
+    }
+
+    private var musicTile: some View {
+        Button {
+            HapticManager.shared.tap()
+            isMusicPresented = true
+        } label: {
+            tile {
+                if let music = appState.nowPlaying(for: appState.currentUser.id) {
+                    let live = music.isLive()
+                    NowPlayingArtwork(nowPlaying: music, size: 40)
+                    HStack(spacing: 5) {
+                        if live {
+                            EqualizerBars(tint: music.providerTint)
+                        }
+                        Text(live ? "music.listening" : "music.lastListened")
+                            .font(Theme.text(.caption, weight: .bold))
+                            .foregroundStyle(music.providerTint)
+                            .lineLimit(1)
+                    }
+                    Text(verbatim: music.track)
+                        .font(Theme.text(.subheadline, weight: .bold))
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
+                    Text(verbatim: music.artist)
+                        .font(Theme.text(.caption2, weight: .semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                } else {
+                    HStack(spacing: -8) {
+                        Image(systemName: "waveform")
+                            .frame(width: 34, height: 34)
+                            .background(Circle().fill(Color(hex: 0x1DB954)))
+                        Image(systemName: "music.note")
+                            .frame(width: 34, height: 34)
+                            .background(Circle().fill(Color(hex: 0xFA2D48)))
+                            .overlay(Circle().strokeBorder(Theme.surface, lineWidth: 2))
+                    }
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(Color.white)
+                    Text("music.tile.title")
+                        .font(Theme.text(.caption, weight: .bold))
+                        .foregroundStyle(Theme.emerald)
+                    Text("music.tile.connect")
+                        .font(Theme.text(.caption2))
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(3)
+                }
+            }
+            .multilineTextAlignment(.leading)
+        }
+        .buttonStyle(PressableButtonStyle(pressedScale: 0.97))
     }
 
     private var viewsTile: some View {
@@ -928,6 +996,16 @@ struct FriendsDrawerView: View {
                     }
                 VStack(alignment: .leading, spacing: 2) {
                     profileLabels(friend)
+                    if let music = appState.liveMusic(for: friend.id) {
+                        HStack(spacing: 4) {
+                            EqualizerBars(tint: music.providerTint)
+                                .scaleEffect(0.75)
+                            Text(verbatim: music.artist.isEmpty ? music.track : "\(music.track) · \(music.artist)")
+                                .lineLimit(1)
+                        }
+                        .font(Theme.text(.caption2, weight: .semibold))
+                        .foregroundStyle(music.providerTint)
+                    }
                     if let time, time.seconds >= 60 {
                         Text("bestFriend.together \(BestFriendProgressView.duration(time.seconds))")
                             .font(Theme.text(.caption2, weight: .semibold))

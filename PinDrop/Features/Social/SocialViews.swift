@@ -287,6 +287,9 @@ struct ProfileView: View {
         ScrollView {
             VStack(spacing: 18) {
                 header
+                if let music = appState.nowPlaying(for: user.id) {
+                    NowPlayingCard(nowPlaying: music)
+                }
                 if !isMe {
                     friendshipCard
                 }

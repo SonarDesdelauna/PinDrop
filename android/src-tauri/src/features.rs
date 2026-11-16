@@ -276,3 +276,33 @@ pub async fn save_image(app: tauri::AppHandle, data: String, name: String) -> Re
     }
     Err("save".into())
 }
+
+// ───────────── Now playing (Spotify / Last.fm, polled by the server) ─────────────
+
+#[tauri::command]
+pub async fn fetch_now_playing(state: State<'_, AppData>) -> Res<Value> {
+    state
+        .rest(
+            Method::GET,
+            "/rest/v1/now_playing",
+            &[("select", "user_id,provider,track,artist,album,artwork_url,track_url,is_playing,updated_at".into())],
+            None,
+            None,
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn music_status(state: State<'_, AppData>) -> Res<Value> {
+    state.rpc("music_status", json!({})).await
+}
+
+#[tauri::command]
+pub async fn link_lastfm(state: State<'_, AppData>, username: String) -> Res<Value> {
+    state.rpc("link_lastfm", json!({ "username": username.trim() })).await
+}
+
+#[tauri::command]
+pub async fn unlink_music(state: State<'_, AppData>, provider: String) -> Res<Value> {
+    state.rpc("unlink_music", json!({ "provider": provider })).await
+}

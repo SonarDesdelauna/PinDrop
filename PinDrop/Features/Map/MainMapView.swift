@@ -496,7 +496,7 @@ struct MainMapView: View {
                         Button {
                             openFriend(friend)
                         } label: {
-                            FriendGroupAnnotationView(users: group.profiles, updatedAt: group.updatedAt, onlineIDs: onlineIDs(for: group.profiles))
+                            FriendGroupAnnotationView(users: group.profiles, updatedAt: group.updatedAt, onlineIDs: onlineIDs(for: group.profiles), music: group.profiles.count == 1 ? group.profiles.first.flatMap { appState.liveMusic(for: $0.id) } : nil)
                         }
                         .buttonStyle(PressableButtonStyle())
                     } else {
@@ -509,7 +509,7 @@ struct MainMapView: View {
                                 }
                             }
                         } label: {
-                            FriendGroupAnnotationView(users: group.profiles, updatedAt: group.updatedAt, onlineIDs: onlineIDs(for: group.profiles))
+                            FriendGroupAnnotationView(users: group.profiles, updatedAt: group.updatedAt, onlineIDs: onlineIDs(for: group.profiles), music: group.profiles.count == 1 ? group.profiles.first.flatMap { appState.liveMusic(for: $0.id) } : nil)
                         }
                     }
                 }

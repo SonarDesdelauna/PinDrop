@@ -10,6 +10,7 @@ struct FriendGroupAnnotationView: View {
     let users: [UserProfile]
     let updatedAt: Date
     let onlineIDs: Set<UUID>
+    var music: NowPlaying?
 
     private let avatarSize: CGFloat = 28
 
@@ -65,6 +66,21 @@ struct FriendGroupAnnotationView: View {
                 .padding(.vertical, 3)
                 .glassCapsule()
                 .fixedSize()
+            }
+            if let music {
+                HStack(spacing: 4) {
+                    EqualizerBars(tint: music.providerTint)
+                        .scaleEffect(0.7)
+                    Text(verbatim: music.track)
+                        .lineLimit(1)
+                }
+                .font(Theme.roundedFixed(9, weight: .bold))
+                .foregroundStyle(Theme.textPrimary)
+                .frame(maxWidth: 120)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .glassCapsule()
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
         .accessibilityElement(children: .combine)

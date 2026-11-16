@@ -138,6 +138,10 @@ final class AppState {
     /// Friends' last shared positions and location permissions.
     private(set) var friendLocations: [UUID: FriendLocation] = [:]
     private(set) var friendPermissions: [UUID: String] = [:]
+    /// What you and your friends are listening to, keyed by user id.
+    private(set) var nowPlayingByUser: [UUID: NowPlaying] = [:]
+    /// Your linked music sources.
+    private(set) var musicStatus: MusicStatus?
     /// Red banners on the map, shown again every time the app is opened.
     var isAlwaysBannerDismissed = false
     var isFriendsLocationBannerDismissed = false
@@ -347,8 +351,42 @@ final class AppState {
         locationService.requestAlwaysAuthorization()
     }
 
+    /// Someone's current song, or the last one heard in the past day.
+    func nowPlaying(for userID: UUID) -> NowPlaying? {
+        nowPlayingByUser[userID]
+    }
+
+    /// Someone's song only while it is playing right now.
+    func liveMusic(for userID: UUID) -> NowPlaying? {
+        guard let entry = nowPlayingByUser[userID], entry.isLive() else { return nil }
+        return entry
+    }
+
+    func reloadMusic() async {
+        guard sessionPhase == .ready else { return }
+        await AppleMusicReporter.reportIfNeeded(using: dataService)
+        async let rowsLoad = try? dataService.fetchNowPlaying()
+        async let statusLoad = try? dataService.musicStatus()
+        let (rows, status) = await (rowsLoad, statusLoad)
+        if let rows {
+            var map: [UUID: NowPlaying] = [:]
+            for row in rows {
+                map[row.userID] = row
+            }
+            if map != nowPlayingByUser {
+                withAnimation(Theme.spring) {
+                    nowPlayingByUser = map
+                }
+            }
+        }
+        if let status, status != musicStatus {
+            musicStatus = status
+        }
+    }
+
     func reloadFriendLocations() async {
         guard sessionPhase == .ready else { return }
+        Task { [weak self] in await self?.reloadMusic() }
         async let locationsLoad = try? dataService.fetchFriendLocations()
         async let permissionsLoad = try? dataService.fetchLocationPermissions()
         let (locations, permissions) = await (locationsLoad, permissionsLoad)
