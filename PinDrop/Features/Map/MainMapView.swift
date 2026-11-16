@@ -198,44 +198,102 @@ struct MainMapView: View {
         }
     }
 
-    /// Where to draw a bottom-anchored annotation so it never covers your avatar: anything
-    /// that would overlap it on screen is pushed just outside, away from you.
-    private func displayCoordinate(for point: GeoPoint) -> CLLocationCoordinate2D {
-        guard let user = appState.userLocation, metersPerPoint > 0 else { return point.coordinate }
-        let clearance: Double = 108
-        let clearanceX: Double = 150
-        let lift: Double = 52
-        let userCenterY: Double = 12
-        let metersPerDegreeLatitude = 111_320.0
-        let metersPerDegreeLongitude = max(1, metersPerDegreeLatitude * cos(user.latitude * Double.pi / 180))
-        let east = (point.longitude - user.longitude) * metersPerDegreeLongitude
-        let north = (point.latitude - user.latitude) * metersPerDegreeLatitude
-        guard (east * east + north * north).squareRoot() < (clearanceX + lift) * 1.5 * metersPerPoint else {
-            return point.coordinate
+    /// Everything is drawn at its true position. What would overlap on screen is merged
+    /// (friends become one Bump-style group, things under your avatar join your avatar)
+    /// or hidden until you zoom in (place labels), like the system map does with labels.
+    private struct MapLayout {
+        var friendGroups: [FriendGroupOnMap] = []
+        var companions: [UserProfile] = []
+        var clusters: [PinCluster] = []
+        var pinsUnderMe: [PhotoPin] = []
+        var capsules: [GeoCapsule] = []
+        var capsulesUnderMe: [GeoCapsule] = []
+        var places: [SavedPlace] = []
+        var publicPlaces: [PublicPlace] = []
+    }
+
+    /// Meters per screen point, rounded to quarter zoom steps so the layout only changes
+    /// when the zoom really changes (no flicker while pinching).
+    private var layoutScale: Double {
+        guard metersPerPoint > 0 else { return 0 }
+        return pow(2, (log2(metersPerPoint) * 4).rounded() / 4)
+    }
+
+    private var mapLayout: MapLayout {
+        let scale = layoutScale
+        var layout = MapLayout()
+        var occupied: [(point: GeoPoint, radius: Double)] = []
+        let me = appState.userLocation
+        let meRadius: Double = 40
+
+        func screenDistance(_ a: GeoPoint, _ b: GeoPoint) -> Double {
+            guard scale > 0 else { return .greatestFiniteMagnitude }
+            return GeoClustering.haversineDistance(from: a, to: b) / scale
         }
-        let heading = mapHeading * Double.pi / 180
-        let screenX = (east * cos(heading) - north * sin(heading)) / metersPerPoint
-        let screenY = -(east * sin(heading) + north * cos(heading)) / metersPerPoint
-        // Keep-out ellipse around the avatar + its label (labels are wider than tall).
-        let radiusX = clearanceX
-        let radiusY = clearance
-        let deltaX = screenX
-        let deltaY = screenY - lift - userCenterY
-        let normalized = ((deltaX / radiusX) * (deltaX / radiusX) + (deltaY / radiusY) * (deltaY / radiusY)).squareRoot()
-        guard normalized < 1 else { return point.coordinate }
-        let newX: Double
-        let newY: Double
-        if normalized < 0.01 {
-            newX = 0
-            newY = -radiusY + lift + userCenterY
-        } else {
-            newX = deltaX / normalized
-            newY = deltaY / normalized + lift + userCenterY
+        func isUnderMe(_ point: GeoPoint, radius: Double) -> Bool {
+            guard let me else { return false }
+            return screenDistance(me, point) < meRadius + radius
         }
-        let up = -newY
-        let newEast = (newX * cos(heading) + up * sin(heading)) * metersPerPoint
-        let newNorth = (-newX * sin(heading) + up * cos(heading)) * metersPerPoint
-        return user.offsetBy(northMeters: newNorth, eastMeters: newEast).coordinate
+        func fits(_ point: GeoPoint, radius: Double) -> Bool {
+            occupied.allSatisfy { screenDistance($0.point, point) >= $0.radius + radius }
+        }
+
+        if let me { occupied.append((me, meRadius)) }
+
+        // Friends: with you → next to your avatar; close to each other on screen → one group.
+        var companions = appState.companions
+        let companionIDs = Set(companions.map(\.id))
+        let mergeMeters = max(AppState.togetherDistance, 46 * scale)
+        var groups: [[FriendOnMap]] = []
+        for friend in appState.visibleFriendLocations where !companionIDs.contains(friend.profile.id) {
+            if isUnderMe(friend.location.location, radius: 18) {
+                companions.append(friend.profile)
+                continue
+            }
+            if let index = groups.firstIndex(where: { group in
+                group.contains { GeoClustering.haversineDistance(from: $0.location.location, to: friend.location.location) <= mergeMeters }
+            }) {
+                groups[index].append(friend)
+            } else {
+                groups.append([friend])
+            }
+        }
+        layout.companions = companions
+        layout.friendGroups = groups.map { FriendGroupOnMap(members: $0) }
+        for group in layout.friendGroups {
+            occupied.append((group.location, 22 + Double(min(group.members.count, 5) - 1) * 10))
+        }
+
+        // Photo pins: under your avatar → shown on it; otherwise always drawn.
+        for cluster in visibleClusters {
+            if isUnderMe(cluster.center, radius: 24) {
+                layout.pinsUnderMe.append(contentsOf: cluster.pins)
+            } else {
+                layout.clusters.append(cluster)
+                occupied.append((cluster.center, 26))
+            }
+        }
+
+        // Capsules: under your avatar → a crystal badge on it; hidden if covered by others.
+        for capsule in appState.visibleCapsules {
+            if isUnderMe(capsule.location, radius: 18) {
+                layout.capsulesUnderMe.append(capsule)
+            } else if fits(capsule.location, radius: 20) {
+                layout.capsules.append(capsule)
+                occupied.append((capsule.location, 20))
+            }
+        }
+
+        // Place labels are the lowest priority: shown only where there is room.
+        for place in visiblePlaces where fits(place.location, radius: 30) {
+            layout.places.append(place)
+            occupied.append((place.location, 30))
+        }
+        for place in appState.visiblePublicPlaces where fits(place.location, radius: 30) {
+            layout.publicPlaces.append(place)
+            occupied.append((place.location, 30))
+        }
+        return layout
     }
 
     /// Saved places drawn on the map: the one you are in is shown on your avatar instead.
@@ -279,6 +337,7 @@ struct MainMapView: View {
 
     private var mapLayer: some View {
         let skidSegments = SkidMarks.segments(trail: appState.trail, current: currentSpeed == nil ? nil : appState.userLocation)
+        let layout = mapLayout
         return Map(position: $cameraPosition, interactionModes: .all) {
             // Your evening trail only (friends never see it), following the streets.
             let trailPoints = appState.myTrailPoints
@@ -310,8 +369,8 @@ struct MainMapView: View {
                     )
             }
 
-            ForEach(visiblePlaces) { place in
-                Annotation(place.name, coordinate: displayCoordinate(for: place.location), anchor: .bottom) {
+            ForEach(layout.places) { place in
+                Annotation(place.name, coordinate: place.coordinate, anchor: .bottom) {
                     Button {
                         HapticManager.shared.tap()
                         appState.isPlacesPresented = true
@@ -323,8 +382,8 @@ struct MainMapView: View {
                 .annotationTitles(.hidden)
             }
 
-            ForEach(appState.visiblePublicPlaces) { place in
-                Annotation(place.name, coordinate: displayCoordinate(for: place.location), anchor: .bottom) {
+            ForEach(layout.publicPlaces) { place in
+                Annotation(place.name, coordinate: place.location.coordinate, anchor: .bottom) {
                     Button {
                         HapticManager.shared.tap()
                         selectedPublicPlace = place
@@ -336,7 +395,7 @@ struct MainMapView: View {
                 .annotationTitles(.hidden)
             }
 
-            ForEach(appState.friendGroupsOnMap) { group in
+            ForEach(layout.friendGroups) { group in
                 Annotation(group.profiles.map(\.displayName).joined(separator: ", "), coordinate: group.location.coordinate, anchor: .bottom) {
                     if group.profiles.count == 1, let friend = group.profiles.first {
                         Button {
@@ -362,7 +421,7 @@ struct MainMapView: View {
                 .annotationTitles(.hidden)
             }
 
-            ForEach(appState.visibleCapsules) { capsule in
+            ForEach(layout.capsules) { capsule in
                 Annotation("", coordinate: capsule.coordinate, anchor: .bottom) {
                     Button {
                         HapticManager.shared.tap()
@@ -387,8 +446,8 @@ struct MainMapView: View {
                 .annotationTitles(.hidden)
             }
 
-            ForEach(visibleClusters) { cluster in
-                Annotation(appState.placeName(for: cluster) ?? "", coordinate: displayCoordinate(for: cluster.center), anchor: .bottom) {
+            ForEach(layout.clusters) { cluster in
+                Annotation(appState.placeName(for: cluster) ?? "", coordinate: cluster.center.coordinate, anchor: .bottom) {
                     annotationView(for: cluster)
                 }
                 .annotationTitles(.hidden)
@@ -406,8 +465,18 @@ struct MainMapView: View {
                         place: appState.currentPlace,
                         since: appState.presenceSince,
                         speed: currentSpeed,
-                        companions: appState.companions,
-                        onlineIDs: onlineIDs(for: appState.companions),
+                        companions: layout.companions,
+                        onlineIDs: onlineIDs(for: layout.companions),
+                        nearbyPin: layout.pinsUnderMe.first,
+                        nearbyCount: layout.pinsUnderMe.count,
+                        nearbyThumbnail: layout.pinsUnderMe.first.flatMap { appState.thumbnail(for: $0) },
+                        nearbyLocked: layout.pinsUnderMe.first.map { appState.isLocked($0) } ?? false,
+                        capsuleCount: layout.capsulesUnderMe.count,
+                        onOpenNearby: { openOwnPins(layout.pinsUnderMe) },
+                        onOpenCapsule: {
+                            HapticManager.shared.tap()
+                            appState.presentedCapsule = layout.capsulesUnderMe.first
+                        },
                         onOpenPhoto: { _ in openOwnPins(ownPins) }
                     )
                 }

@@ -3,21 +3,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0b14">
   <title>PinDrop</title>
-  <link rel="stylesheet" href="vendor/leaflet.css">
+  <link rel="stylesheet" href="vendor/maplibre-gl.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <!-- Login / sign up -->
   <section id="auth" class="screen hidden">
+    <div class="aurora"></div>
     <div class="auth-card">
-      <div class="logo">📍</div>
+      <div class="brand-mark"><svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg></div>
       <h1>PinDrop</h1>
       <p class="muted">Scatta, lascia un pin, scopri dove sono i tuoi amici.</p>
-      <input id="email" type="email" placeholder="Email" autocomplete="email">
-      <input id="password" type="password" placeholder="Password" autocomplete="current-password">
+      <div class="field"><input id="email" type="email" placeholder="Email" autocomplete="email"></div>
+      <div class="field"><input id="password" type="password" placeholder="Password" autocomplete="current-password"></div>
       <button id="authSubmit" class="primary">Accedi</button>
-      <button id="authToggle" class="link">Non hai un account? Registrati</button>
+      <button id="authToggle" class="link">Non hai un account? <b>Registrati</b></button>
       <button id="authReset" class="link small">Password dimenticata?</button>
       <p id="authMsg" class="msg"></p>
     </div>
@@ -25,12 +27,13 @@
 
   <!-- First profile setup -->
   <section id="setup" class="screen hidden">
+    <div class="aurora"></div>
     <div class="auth-card">
-      <div class="logo">👋</div>
+      <div class="brand-mark">👋</div>
       <h1>Il tuo profilo</h1>
       <p class="muted">Gli amici ti troveranno con il tuo username.</p>
-      <input id="displayName" type="text" placeholder="Nome" maxlength="40">
-      <input id="username" type="text" placeholder="username" maxlength="24" autocapitalize="none" autocomplete="off">
+      <div class="field"><input id="displayName" type="text" placeholder="Nome" maxlength="40"></div>
+      <div class="field at"><input id="username" type="text" placeholder="username" maxlength="24" autocapitalize="none" autocomplete="off"></div>
       <button id="setupSubmit" class="primary">Continua</button>
       <p id="setupMsg" class="msg"></p>
     </div>
@@ -39,70 +42,72 @@
   <!-- Map -->
   <section id="main" class="screen hidden">
     <div id="map"></div>
-    <div class="topbar">
-      <div id="lockPill" class="pill"></div>
-      <button id="logoutBtn" class="round" title="Esci">⎋</button>
+
+    <div class="top">
+      <div id="statusPill" class="pill glass"></div>
+      <div class="side">
+        <button id="profileBtn" class="avatar-btn"></button>
+        <button id="recapBtn" class="fab glass" aria-label="Recap">
+          <svg viewBox="0 0 24 24"><path d="M4 5h16v3H4zM6 10h12v9H6z" opacity=".35"/><path d="M12 11.5l1.2 2.6 2.8.3-2.1 1.9.6 2.8-2.5-1.5-2.5 1.5.6-2.8-2.1-1.9 2.8-.3z"/></svg>
+          <span>Recap</span>
+        </button>
+      </div>
     </div>
-    <div class="dock">
-      <button id="friendsBtn" class="round big-side">👥<span id="reqBadge" class="badge hidden"></span></button>
-      <label class="shutter" for="photoInput"><span></span></label>
-      <input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
-      <button id="centerBtn" class="round big-side">◎</button>
+
+    <div id="crossBanner" class="banner glass hidden"></div>
+    <div id="inviteBanner" class="banner glass invite hidden"></div>
+
+    <nav class="dock glass">
+      <button id="locateBtn" class="dock-btn" aria-label="La mia posizione">
+        <svg viewBox="0 0 24 24"><path d="M3 11l18-8-8 18-2-8z"/></svg>
+      </button>
+      <button id="syncBtn" class="dock-btn" aria-label="Sync Shot">
+        <svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>
+      </button>
+      <button id="cameraBtn" class="dock-camera" aria-label="Scatta">
+        <svg viewBox="0 0 24 24"><path d="M9 4l-1.5 2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.5L15 4zm3 4.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9z"/><circle cx="12" cy="13" r="2.6"/></svg>
+      </button>
+      <button id="capsuleBtn" class="dock-btn" aria-label="Geo-Capsula">
+        <svg viewBox="0 0 24 24"><path d="M12 2l7 6-7 14L5 8z" opacity=".45"/><path d="M12 2l7 6H5z"/></svg>
+      </button>
+      <button id="friendsBtn" class="dock-btn" aria-label="Amici">
+        <svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.9 3.1-6.5 7-6.5s7 2.6 7 6.5z"/><circle cx="17" cy="9" r="2.8" opacity=".7"/><path d="M15.5 13.6c3.7-.4 6.5 2 6.5 5.4h-4.2c0-2-.8-4-2.3-5.4z" opacity=".7"/></svg>
+        <span id="reqBadge" class="badge hidden"></span>
+      </button>
+    </nav>
+    <input id="photoInput" type="file" accept="image/*" hidden>
+  </section>
+
+  <!-- In-app camera -->
+  <section id="camera" class="camera hidden">
+    <video id="video" playsinline autoplay muted></video>
+    <div id="flash" class="flash"></div>
+    <div class="cam-top">
+      <button id="camClose" class="fab glass" aria-label="Chiudi"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
+      <div id="camMode" class="pill glass"></div>
+      <button id="camFlip" class="fab glass" aria-label="Gira"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z" opacity=".4"/><path d="M8.5 13a3.5 3.5 0 0 1 6-2.4l-1.3 1.2H17V8l-1.2 1.3A5.3 5.3 0 0 0 6.7 13zm7 0a3.5 3.5 0 0 1-6 2.4l1.3-1.2H7V18l1.2-1.3A5.3 5.3 0 0 0 17.3 13z"/></svg></button>
+    </div>
+    <div id="countdown" class="countdown hidden"></div>
+    <div id="syncStatus" class="sync-status glass hidden"></div>
+    <div class="cam-bottom">
+      <button id="camGallery" class="fab glass" aria-label="Galleria"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3" opacity=".4"/><path d="M5 18l4.5-6 3.5 4.5 2.5-3L19 18z"/><circle cx="16" cy="8.5" r="1.8"/></svg></button>
+      <button id="shutter" class="shutter" aria-label="Scatta"><span></span></button>
+      <div class="fab-spacer"></div>
     </div>
   </section>
 
-  <!-- Friends sheet -->
-  <div id="friendsSheet" class="sheet hidden">
+  <!-- Bottom sheets -->
+  <div id="sheet" class="sheet hidden">
     <div class="sheet-card">
-      <div class="sheet-head">
-        <h2>Amici</h2>
-        <button class="round close" data-close="friendsSheet">✕</button>
-      </div>
-      <div class="row">
-        <input id="addFriend" type="text" placeholder="Username o codice invito" autocapitalize="none">
-        <button id="addFriendBtn" class="primary small">Aggiungi</button>
-      </div>
-      <p id="friendMsg" class="msg"></p>
-      <div id="myCode" class="muted small"></div>
-      <h3 id="reqTitle" class="hidden">Richieste</h3>
-      <div id="requests"></div>
-      <h3>I tuoi amici</h3>
-      <div id="friendsList"></div>
+      <div class="grabber"></div>
+      <div id="sheetBody"></div>
     </div>
   </div>
 
-  <!-- New pin -->
-  <div id="composer" class="sheet hidden">
-    <div class="sheet-card">
-      <div class="sheet-head">
-        <h2>Nuovo pin</h2>
-        <button class="round close" data-close="composer">✕</button>
-      </div>
-      <img id="preview" alt="">
-      <input id="caption" type="text" maxlength="40" placeholder="Didascalia (opzionale)">
-      <button id="publishBtn" class="primary">Pubblica qui 📍</button>
-      <p class="muted small">Il pin sparisce dopo 6 ore.</p>
-    </div>
-  </div>
-
-  <!-- Pin viewer -->
-  <div id="viewer" class="sheet hidden">
-    <div class="sheet-card viewer-card">
-      <div class="sheet-head">
-        <div id="viewerAuthor" class="author"></div>
-        <button class="round close" data-close="viewer">✕</button>
-      </div>
-      <img id="viewerImg" alt="">
-      <p id="viewerCaption"></p>
-      <div id="viewerReactions" class="reactions"></div>
-      <p id="viewerMeta" class="muted small"></p>
-      <button id="deletePinBtn" class="danger hidden">Elimina pin</button>
-    </div>
-  </div>
-
+  <div id="celebration" class="celebration hidden"></div>
   <div id="toast" class="toast hidden"></div>
 
-  <script src="vendor/leaflet.js"></script>
+  <script src="vendor/maplibre-gl.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

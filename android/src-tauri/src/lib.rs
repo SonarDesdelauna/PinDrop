@@ -13,10 +13,13 @@ use std::{
 };
 use tauri::{Manager, State};
 
+mod features;
+
 const SUPABASE_URL: &str = "https://tqtpkdxeedcjmlhabimg.supabase.co";
 /// Public (publishable) client key, same as the iOS app. Row Level Security protects the data.
 const SUPABASE_KEY: &str = "sb_publishable_jfZKfM7CgDgII_FZCmv5Tw_XLxNpTco";
-const PIN_SELECT: &str = "id,latitude,longitude,place_name,caption,image_path,thumb_path,blur_path,created_at,expires_at,author:profiles!pins_author_id_fkey(*),reactions(user_id,emoji,created_at)";
+const PIN_SELECT: &str = "id,latitude,longitude,place_name,caption,image_path,thumb_path,blur_path,created_at,expires_at,sync_session_id,author:profiles!pins_author_id_fkey(*),reactions(user_id,emoji,created_at)";
+const CAPSULE_SELECT: &str = "id,latitude,longitude,hint,image_path,thumb_path,created_at,expires_at,recipient_id,author:profiles!geo_capsules_author_id_fkey(*)";
 const FRIEND_SELECT: &str = "id,requester_id,addressee_id,status,created_at,requester:profiles!friendships_requester_id_fkey(*),addressee:profiles!friendships_addressee_id_fkey(*)";
 
 type Res<T> = Result<T, String>;
@@ -178,9 +181,9 @@ impl AppData {
         self.rest(Method::POST, &format!("/rest/v1/rpc/{name}"), &[], Some(args), None).await
     }
 
-    async fn upload(&self, session: &Session, path: &str, bytes: Vec<u8>) -> Res<()> {
+    async fn upload(&self, session: &Session, bucket: &str, path: &str, bytes: Vec<u8>) -> Res<()> {
         let request = self
-            .authed(Method::POST, &format!("/storage/v1/object/pins/{path}"), session)
+            .authed(Method::POST, &format!("/storage/v1/object/{bucket}/{path}"), session)
             .header("Content-Type", "image/jpeg")
             .header("cache-control", "max-age=21600")
             .header("x-upsert", "false")
@@ -359,7 +362,8 @@ async fn fetch_pins(state: State<'_, AppData>) -> Res<Value> {
 
 /// Signed URLs (1 hour) for images in the private `pins` bucket: { path: url }.
 #[tauri::command]
-async fn sign_urls(state: State<'_, AppData>, paths: Vec<String>) -> Res<Value> {
+async fn sign_urls(state: State<'_, AppData>, paths: Vec<String>, bucket: Option<String>) -> Res<Value> {
+    let bucket = if bucket.as_deref() == Some("capsules") { "capsules" } else { "pins" };
     let mut out = Map::new();
     if paths.is_empty() {
         return Ok(Value::Object(out));
@@ -367,7 +371,7 @@ async fn sign_urls(state: State<'_, AppData>, paths: Vec<String>) -> Res<Value> 
     let rows = state
         .rest(
             Method::POST,
-            "/storage/v1/object/sign/pins",
+            &format!("/storage/v1/object/sign/{bucket}"),
             &[],
             Some(json!({ "expiresIn": 3600, "paths": paths })),
             None,
@@ -395,6 +399,7 @@ async fn publish_pin(
     full: String,
     thumb: String,
     blur: String,
+    sync_session_id: Option<String>,
 ) -> Res<Value> {
     let session = state.token().await?;
     let uid = session.user_id.to_lowercase();
@@ -406,7 +411,7 @@ async fn publish_pin(
     let mut result: Res<Value> = Ok(Value::Null);
     for (path, data) in paths.iter().zip(images.iter()) {
         let bytes = B64.decode(data).map_err(|e| e.to_string())?;
-        if let Err(error) = state.upload(&session, path, bytes).await {
+        if let Err(error) = state.upload(&session, "pins", path, bytes).await {
             result = Err(error);
             break;
         }
@@ -420,7 +425,8 @@ async fn publish_pin(
             "caption": caption,
             "image_path": paths[0],
             "thumb_path": paths[1],
-            "blur_path": paths[2]
+            "blur_path": paths[2],
+            "sync_session_id": sync_session_id
         });
         result = state
             .rest(
@@ -532,7 +538,22 @@ pub fn run() {
             sign_urls,
             publish_pin,
             delete_pin,
-            toggle_reaction
+            toggle_reaction,
+            features::route,
+            features::fetch_cross_paths,
+            features::fetch_capsules,
+            features::capsule_secret,
+            features::create_capsule,
+            features::open_capsule,
+            features::delete_capsule,
+            features::sync_invite,
+            features::sync_respond,
+            features::sync_arm,
+            features::sync_cancel,
+            features::sync_poll,
+            features::pending_sync_invites,
+            features::fetch_image_b64,
+            features::save_image
         ])
         .run(tauri::generate_context!())
         .expect("error while running PinDrop");

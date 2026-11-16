@@ -16,6 +16,15 @@ struct MyLocationAnnotationView: View {
     /// Friends standing with you, drawn side by side next to your avatar (like Bump).
     var companions: [UserProfile] = []
     var onlineIDs: Set<UUID> = []
+    /// Friends' photos right under you on screen, merged onto your avatar.
+    var nearbyPin: PhotoPin? = nil
+    var nearbyCount: Int = 0
+    var nearbyThumbnail: PinImage? = nil
+    var nearbyLocked: Bool = false
+    /// Geo-Capsules right under you on screen.
+    var capsuleCount: Int = 0
+    var onOpenNearby: () -> Void = {}
+    var onOpenCapsule: () -> Void = {}
     let onOpenPhoto: (PhotoPin) -> Void
 
     @State private var isPulsing = false
@@ -89,6 +98,44 @@ struct MyLocationAnnotationView: View {
                     .buttonStyle(PressableButtonStyle())
                     .offset(x: 10, y: -6)
                     .accessibilityLabel(Text("presence.yourPhoto"))
+                    .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if let nearbyPin {
+                    Button(action: onOpenNearby) {
+                        PinThumbnail(pin: nearbyPin, image: nearbyThumbnail, size: 24, isLocked: nearbyLocked)
+                            .shadow(color: Color.black.opacity(0.45), radius: 5, x: 0, y: 3)
+                            .overlay(alignment: .topLeading) {
+                                if nearbyCount > 1 {
+                                    Text(verbatim: "\(nearbyCount)")
+                                        .font(Theme.roundedFixed(9, weight: .heavy))
+                                        .foregroundStyle(Color.white)
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 1)
+                                        .background(Capsule().fill(Theme.accentGradient))
+                                        .offset(x: -6, y: -4)
+                                }
+                            }
+                    }
+                    .buttonStyle(PressableButtonStyle())
+                    .offset(x: -10, y: -6)
+                    .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .overlay(alignment: .bottomLeading) {
+                if capsuleCount > 0 {
+                    Button(action: onOpenCapsule) {
+                        Image(systemName: "cube.transparent.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(Color.white)
+                            .frame(width: 24, height: 24)
+                            .background(Circle().fill(LinearGradient(colors: [Color(hex: 0xF59E0B), Theme.electricViolet], startPoint: .topLeading, endPoint: .bottomTrailing)))
+                            .overlay(Circle().strokeBorder(Color.white.opacity(0.8), lineWidth: 1.5))
+                            .shadow(color: Color(hex: 0xF59E0B).opacity(0.6), radius: 6)
+                    }
+                    .buttonStyle(PressableButtonStyle())
+                    .offset(x: -4, y: 2)
                     .transition(.scale.combined(with: .opacity))
                 }
             }

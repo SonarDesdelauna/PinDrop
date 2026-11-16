@@ -37,11 +37,11 @@ jobs:
           echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
           cd android && npm install
 
-      - name: Vendor Leaflet
+      - name: Vendor MapLibre
         run: |
           mkdir -p android/ui/vendor
-          curl -fsSL https://unpkg.com/leaflet@1.9.4/dist/leaflet.js -o android/ui/vendor/leaflet.js
-          curl -fsSL https://unpkg.com/leaflet@1.9.4/dist/leaflet.css -o android/ui/vendor/leaflet.css
+          curl -fsSL https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js -o android/ui/vendor/maplibre-gl.js
+          curl -fsSL https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css -o android/ui/vendor/maplibre-gl.css
 
       - name: Init Android project
         working-directory: android
@@ -49,7 +49,7 @@ jobs:
           npm run tauri -- android init --ci
           npm run tauri -- icon src-tauri/app-icon.png
           MANIFEST=src-tauri/gen/android/app/src/main/AndroidManifest.xml
-          sed -i '0,/<application/s//<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" \/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" \/>\n    <uses-feature android:name="android.hardware.location.gps" android:required="false" \/>\n    <application/' "$MANIFEST"
+          sed -i '0,/<application/s//<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" \/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" \/>\n    <uses-permission android:name="android.permission.CAMERA" \/>\n    <uses-permission android:name="android.permission.VIBRATE" \/>\n    <uses-feature android:name="android.hardware.location.gps" android:required="false" \/>\n    <uses-feature android:name="android.hardware.camera" android:required="false" \/>\n    <application/' "$MANIFEST"
           cat "$MANIFEST"
 
       - name: Build APK
