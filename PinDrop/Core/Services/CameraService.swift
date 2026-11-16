@@ -36,13 +36,19 @@ struct CameraCapabilities: Sendable, Equatable {
 
 /// Owns the `AVCaptureSession`. Every mutable member is only touched on `queue`,
 /// which is what makes the `@unchecked Sendable` conformance sound.
-final class CaptureEngine: NSObject, @unchecked Sendable {
+final class CaptureEngine: NSObject, @unchecked Sendable, AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDataOutputSampleBufferDelegate {
     /// Upper bound for zoom, to keep live photos sharp and honest.
     static let maximumZoom: CGFloat = 5
 
     let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "com.pindrop.camera.session", qos: .userInitiated)
     private let photoOutput = AVCapturePhotoOutput()
+    private let videoOutput = AVCaptureVideoDataOutput()
+    private let audioOutput = AVCaptureAudioDataOutput()
+    private var microphoneInput: AVCaptureDeviceInput?
+    /// Sample buffers and the recorder live on this queue only.
+    private let recordQueue = DispatchQueue(label: "com.pindrop.camera.record", qos: .userInitiated)
+    private var recorder: VideoRecorder?
     private var currentInput: AVCaptureDeviceInput?
     private var processors: [Int64: PhotoCaptureProcessor] = [:]
     private var isOutputConfigured = false
@@ -141,6 +147,17 @@ final class CaptureEngine: NSObject, @unchecked Sendable {
             session.sessionPreset = .photo
             guard session.canAddOutput(photoOutput) else { throw CameraError.configurationFailed }
             session.addOutput(photoOutput)
+            // Frames for videos: preview sized, enough for a 720 x 960 clip.
+            videoOutput.alwaysDiscardsLateVideoFrames = true
+            videoOutput.deliversPreviewSizedOutputBuffers = true
+            videoOutput.setSampleBufferDelegate(self, queue: recordQueue)
+            if session.canAddOutput(videoOutput) {
+                session.addOutput(videoOutput)
+            }
+            audioOutput.setSampleBufferDelegate(self, queue: recordQueue)
+            if session.canAddOutput(audioOutput) {
+                session.addOutput(audioOutput)
+            }
             isOutputConfigured = true
         }
 
@@ -159,6 +176,7 @@ final class CaptureEngine: NSObject, @unchecked Sendable {
 
         photoOutput.maxPhotoQualityPrioritization = .balanced
         configurePhotoConnection(position: device.position)
+        configureVideoConnection(position: device.position)
         applyDeviceDefaults(device)
 
         return CameraCapabilities(
@@ -180,6 +198,79 @@ final class CaptureEngine: NSObject, @unchecked Sendable {
         }
     }
 
+    private func configureVideoConnection(position: AVCaptureDevice.Position) {
+        guard let connection = videoOutput.connection(with: .video) else { return }
+        if connection.isVideoRotationAngleSupported(90) {
+            connection.videoRotationAngle = 90
+        }
+        if connection.isVideoMirroringSupported {
+            connection.automaticallyAdjustsVideoMirroring = false
+            connection.isVideoMirrored = position == .front
+        }
+    }
+
+    // MARK: Video recording
+
+    /// Starts writing a clip to `url`. Flipping the camera while recording keeps the same clip.
+    func startRecording(to url: URL, withAudio: Bool) async -> Bool {
+        let hasAudio: Bool = await withCheckedContinuation { continuation in
+            queue.async {
+                guard self.session.isRunning else {
+                    continuation.resume(returning: false)
+                    return
+                }
+                if withAudio, self.microphoneInput == nil,
+                   let mic = AVCaptureDevice.default(for: .audio),
+                   let input = try? AVCaptureDeviceInput(device: mic) {
+                    self.session.beginConfiguration()
+                    if self.session.canAddInput(input) {
+                        self.session.addInput(input)
+                        self.microphoneInput = input
+                    }
+                    self.session.commitConfiguration()
+                }
+                self.configureVideoConnection(position: self.currentInput?.device.position ?? .back)
+                continuation.resume(returning: withAudio && self.microphoneInput != nil)
+            }
+        }
+        return await withCheckedContinuation { continuation in
+            recordQueue.async {
+                do {
+                    self.recorder = try VideoRecorder(url: url, hasAudio: hasAudio)
+                    continuation.resume(returning: true)
+                } catch {
+                    self.recorder = nil
+                    continuation.resume(returning: false)
+                }
+            }
+        }
+    }
+
+    /// Finishes the clip. Returns the file, or `nil` if nothing was recorded.
+    func stopRecording() async -> URL? {
+        await withCheckedContinuation { continuation in
+            recordQueue.async {
+                guard let recorder = self.recorder else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                self.recorder = nil
+                recorder.finish { url in
+                    continuation.resume(returning: url)
+                }
+            }
+        }
+    }
+
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        guard let recorder else { return }
+        if output === videoOutput {
+            recorder.appendVideo(sampleBuffer)
+        } else {
+            recorder.appendAudio(sampleBuffer)
+        }
+    }
+
     private func applyDeviceDefaults(_ device: AVCaptureDevice) {
         guard (try? device.lockForConfiguration()) != nil else { return }
         if device.isFocusModeSupported(.continuousAutoFocus) {
@@ -198,6 +289,82 @@ final class CaptureEngine: NSObject, @unchecked Sendable {
     private static func device(for position: AVCaptureDevice.Position) -> AVCaptureDevice? {
         AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position)
             ?? AVCaptureDevice.default(for: .video)
+    }
+}
+
+/// Writes one clip (H.264 720 x 960 + AAC). Used only on the engine's record queue.
+private final class VideoRecorder: @unchecked Sendable {
+    private let url: URL
+    private let writer: AVAssetWriter
+    private let videoInput: AVAssetWriterInput
+    private let audioInput: AVAssetWriterInput?
+    private var isSessionStarted = false
+
+    init(url: URL, hasAudio: Bool) throws {
+        self.url = url
+        try? FileManager.default.removeItem(at: url)
+        writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+        writer.shouldOptimizeForNetworkUse = true
+        videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoWidthKey: 720,
+            AVVideoHeightKey: 960,
+            AVVideoScalingModeKey: AVVideoScalingModeResizeAspectFill,
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: 3_500_000,
+                AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel
+            ]
+        ])
+        videoInput.expectsMediaDataInRealTime = true
+        guard writer.canAdd(videoInput) else { throw CameraError.captureFailed }
+        writer.add(videoInput)
+        if hasAudio {
+            let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVNumberOfChannelsKey: 1,
+                AVSampleRateKey: 44_100,
+                AVEncoderBitRateKey: 96_000
+            ])
+            input.expectsMediaDataInRealTime = true
+            if writer.canAdd(input) {
+                writer.add(input)
+                audioInput = input
+            } else {
+                audioInput = nil
+            }
+        } else {
+            audioInput = nil
+        }
+    }
+
+    func appendVideo(_ buffer: CMSampleBuffer) {
+        if !isSessionStarted {
+            guard writer.startWriting() else { return }
+            writer.startSession(atSourceTime: CMSampleBufferGetPresentationTimeStamp(buffer))
+            isSessionStarted = true
+        }
+        guard writer.status == .writing, videoInput.isReadyForMoreMediaData else { return }
+        videoInput.append(buffer)
+    }
+
+    func appendAudio(_ buffer: CMSampleBuffer) {
+        guard isSessionStarted, writer.status == .writing, let audioInput, audioInput.isReadyForMoreMediaData else { return }
+        audioInput.append(buffer)
+    }
+
+    func finish(_ completion: @escaping @Sendable (URL?) -> Void) {
+        guard isSessionStarted, writer.status == .writing else {
+            writer.cancelWriting()
+            completion(nil)
+            return
+        }
+        videoInput.markAsFinished()
+        audioInput?.markAsFinished()
+        let writer = self.writer
+        let url = self.url
+        writer.finishWriting {
+            completion(writer.status == .completed ? url : nil)
+        }
     }
 }
 
@@ -353,6 +520,29 @@ final class CameraService {
         let clamped = min(max(factor, max(1, minZoom)), max(1, maxZoom))
         zoomFactor = clamped
         engine.setZoom(clamped, animated: animated)
+    }
+
+    private(set) var isRecording = false
+
+    /// Asks once for the microphone, so videos have sound.
+    func prepareMicrophone() async {
+        if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
+            _ = await AVCaptureDevice.requestAccess(for: .audio)
+        }
+    }
+
+    func startRecording() async -> Bool {
+        guard status == .running, !isRecording, !isCapturing else { return false }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("clip-\(UUID().uuidString).mp4")
+        let withAudio = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        isRecording = await engine.startRecording(to: url, withAudio: withAudio)
+        return isRecording
+    }
+
+    func stopRecording() async -> URL? {
+        guard isRecording else { return nil }
+        isRecording = false
+        return await engine.stopRecording()
     }
 
     func capturePhoto() async throws -> Data {

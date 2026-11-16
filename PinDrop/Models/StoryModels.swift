@@ -17,13 +17,15 @@ struct StoryView: Hashable, Sendable, Decodable {
 
 /// A photo story that disappears 24 hours after it was taken (`public.stories`).
 struct StoryItem: Identifiable, Hashable, Sendable, Decodable {
-    static let selectColumns = "id, image_path, overlay_text, overlay_y, location_tag, created_at, expires_at, author:profiles!stories_author_id_fkey(*), views:story_views(viewer_id, liked, viewed_at, viewer:profiles!story_views_viewer_id_fkey(*))"
+    static let selectColumns = "id, image_path, video_path, overlay_text, overlay_y, location_tag, created_at, expires_at, author:profiles!stories_author_id_fkey(*), views:story_views(viewer_id, liked, viewed_at, viewer:profiles!story_views_viewer_id_fkey(*))"
     static let lifetime: TimeInterval = 86_400
 
     let id: UUID
     let author: UserProfile
     /// Storage key "bucket/path" of the photo.
     let imageKey: String
+    /// Storage key "stories/<path>.mp4" when the story is a video.
+    var videoKey: String? = nil
     let createdAt: Date
     let expiresAt: Date
     let locationTag: String?
@@ -39,6 +41,7 @@ struct StoryItem: Identifiable, Hashable, Sendable, Decodable {
         case id
         case author
         case imagePath = "image_path"
+        case videoPath = "video_path"
         case overlayText = "overlay_text"
         case overlayY = "overlay_y"
         case locationTag = "location_tag"
@@ -79,6 +82,7 @@ struct StoryItem: Identifiable, Hashable, Sendable, Decodable {
         author = try container.decode(UserProfile.self, forKey: .author)
         let path = try container.decode(String.self, forKey: .imagePath)
         imageKey = "stories/\(path)"
+        videoKey = try container.decodeIfPresent(String.self, forKey: .videoPath).map { "stories/\($0)" }
         let text = try container.decodeIfPresent(String.self, forKey: .overlayText) ?? ""
         overlayText = text.isEmpty ? nil : text
         overlayY = try container.decodeIfPresent(Double.self, forKey: .overlayY) ?? 0.75

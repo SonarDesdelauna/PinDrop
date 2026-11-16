@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreImage
 import CoreImage.CIFilterBuiltins
 import SwiftUI
@@ -51,6 +52,14 @@ enum StoryEffect: String, CaseIterable, Identifiable, Sendable {
         guard let output = filtered(input, unit: unit)?.cropped(to: extent),
               let result = Self.context.createCGImage(output, from: extent) else { return nil }
         return UIImage(cgImage: result)
+    }
+
+    /// The effect on a Core Image frame (video frames use this too).
+    nonisolated func applyCI(_ input: CIImage) -> CIImage {
+        guard self != .original else { return input }
+        let extent = input.extent
+        let unit = max(extent.width, extent.height) / 1_000
+        return filtered(input, unit: unit)?.cropped(to: extent) ?? input
     }
 
     nonisolated private func filtered(_ input: CIImage, unit: CGFloat) -> CIImage? {
@@ -336,19 +345,24 @@ struct StoryLayerView: View {
 
 /// The story itself: photo with its effect and every layer. Used on screen and for the export.
 struct StoryCanvas: View {
-    let image: UIImage
+    /// `nil` draws only the layers on a transparent background (laid over videos).
+    let image: UIImage?
     let layers: [StoryLayer]
     let size: CGSize
 
     var body: some View {
         let unit = size.width / 360
         ZStack {
-            Color.black
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(width: size.width, height: size.height)
-                .clipped()
+            if let image {
+                Color.black
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: size.width, height: size.height)
+                    .clipped()
+            } else {
+                Color.clear
+            }
             ForEach(layers) { layer in
                 StoryLayerView(layer: layer, unit: unit)
                     .frame(maxWidth: size.width * 0.9)
@@ -389,6 +403,7 @@ struct StoryComposerView: View {
     @State private var gestureStart: StoryLayer?
     @State private var effectBanner: StoryEffect?
     @State private var isPublishing = false
+    @State private var videoComposition: AVVideoComposition?
     @State private var errorMessage: String?
     @FocusState private var isTextFocused: Bool
 
@@ -449,6 +464,9 @@ struct StoryComposerView: View {
             let image = shot.previewImage
             let rendered = await StoryEffect.render(effect, on: image)
             filteredImage = rendered
+            if let video = shot.videoURL {
+                videoComposition = await VideoTools.previewComposition(for: video, effect: effect)
+            }
         }
     }
 
@@ -468,6 +486,12 @@ struct StoryComposerView: View {
                 .scaledToFill()
                 .frame(width: size.width, height: size.height)
                 .clipped()
+                .overlay {
+                    if let video = shot.videoURL {
+                        LoopingVideoView(url: video, composition: videoComposition, compositionID: videoComposition == nil ? "original" : effect.rawValue)
+                            .allowsHitTesting(false)
+                    }
+                }
                 .contentShape(Rectangle())
                 .gesture(swipeGesture)
                 .onTapGesture {
@@ -854,6 +878,10 @@ struct StoryComposerView: View {
         guard !isPublishing else { return }
         isPublishing = true
         errorMessage = nil
+        if let video = shot.videoURL {
+            publishVideo(video)
+            return
+        }
         let renderer = ImageRenderer(content: StoryCanvas(image: displayImage, layers: layers, size: Self.exportSize))
         renderer.scale = 3
         guard let data = renderer.uiImage?.jpegData(compressionQuality: 0.85) else {
@@ -865,6 +893,33 @@ struct StoryComposerView: View {
         Task {
             do {
                 try await appState.social.publishStory(photo: data, overlayText: "", overlayY: 0.5, locationTag: tag)
+                HapticManager.shared.success()
+                appState.showToast(.success, title: String(localized: "story.published.title"), subtitle: String(localized: "story.published.subtitle"))
+                isPublishing = false
+                onPublished()
+            } catch {
+                HapticManager.shared.error()
+                errorMessage = error.localizedDescription
+                isPublishing = false
+            }
+        }
+    }
+}
+
+extension StoryComposerView {
+    /// Video stories: effect and layers are burned into a 9:16 clip, its first frame is the photo.
+    private func publishVideo(_ video: URL) {
+        let overlayRenderer = ImageRenderer(content: StoryCanvas(image: nil, layers: layers, size: Self.exportSize))
+        overlayRenderer.scale = 2
+        overlayRenderer.isOpaque = false
+        let overlay = layers.isEmpty ? nil : overlayRenderer.uiImage
+        let chosenEffect = effect
+        let tag = layers.contains { $0.kind == .location } ? placeName : nil
+        Task {
+            do {
+                let exported = try await VideoTools.exportStory(video: video, effect: chosenEffect, overlay: overlay)
+                guard let poster = await VideoTools.posterJPEG(for: exported) else { throw CameraError.captureFailed }
+                try await appState.social.publishStory(photo: poster, video: exported, overlayText: "", overlayY: 0.5, locationTag: tag)
                 HapticManager.shared.success()
                 appState.showToast(.success, title: String(localized: "story.published.title"), subtitle: String(localized: "story.published.subtitle"))
                 isPublishing = false

@@ -9,6 +9,8 @@ struct CapturedShot: Identifiable {
     /// The GPS fix taken at the instant of the shot. `nil` when location access is denied.
     let location: GeoPoint?
     let capturedAt: Date
+    /// Set when the shutter was held: a clip of up to 10 s (the image is its first frame).
+    var videoURL: URL? = nil
 }
 
 /// Post-capture preview: choose a live pin (6 h, short caption) or a Geo-Capsule (24 h,
@@ -104,6 +106,11 @@ struct PostCaptureSheet: View {
                 Image(uiImage: shot.previewImage)
                     .resizable()
                     .scaledToFill()
+                    .overlay {
+                        if let video = shot.videoURL {
+                            LoopingVideoView(url: video)
+                        }
+                    }
             }
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.photo, style: .continuous))
             .overlay {
@@ -430,7 +437,8 @@ struct PostCaptureSheet: View {
                         location: location,
                         hint: hintText,
                         message: trimmedCaption,
-                        recipient: target
+                        recipient: target,
+                        video: shot.videoURL
                     )
                     isPublishing = false
                     onDropped()
@@ -448,7 +456,8 @@ struct PostCaptureSheet: View {
                     processed: shot.processed,
                     location: location,
                     placeName: placeName,
-                    caption: trimmedCaption
+                    caption: trimmedCaption,
+                    video: shot.videoURL
                 )
                 isPublishing = false
                 onDropped()

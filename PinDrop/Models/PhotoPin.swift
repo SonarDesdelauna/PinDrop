@@ -59,7 +59,7 @@ struct PhotoPin: Identifiable, Decodable, Sendable {
     static let reactionPalette: [String] = ["🔥", "😍", "😂", "👀", "🫶"]
 
     /// Columns requested from PostgREST, with the author profile and reactions embedded.
-    static let selectColumns = "id, latitude, longitude, place_name, caption, image_path, thumb_path, blur_path, created_at, expires_at, sync_session_id, author:profiles!pins_author_id_fkey(*), reactions(user_id, emoji, created_at)"
+    static let selectColumns = "id, latitude, longitude, place_name, caption, image_path, thumb_path, blur_path, video_path, created_at, expires_at, sync_session_id, author:profiles!pins_author_id_fkey(*), reactions(user_id, emoji, created_at)"
 
     let id: UUID
     var author: UserProfile
@@ -71,6 +71,8 @@ struct PhotoPin: Identifiable, Decodable, Sendable {
     let imagePath: String
     let thumbPath: String
     let blurPath: String
+    /// The MP4 when the drop is a video (the image paths hold its first frame).
+    var videoPath: String? = nil
     let createdAt: Date
     let expiresAt: Date
     var reactions: [Reaction]
@@ -91,6 +93,7 @@ struct PhotoPin: Identifiable, Decodable, Sendable {
         case imagePath = "image_path"
         case thumbPath = "thumb_path"
         case blurPath = "blur_path"
+        case videoPath = "video_path"
         case createdAt = "created_at"
         case expiresAt = "expires_at"
         case reactions
@@ -142,6 +145,7 @@ struct PhotoPin: Identifiable, Decodable, Sendable {
         imagePath = try container.decode(String.self, forKey: .imagePath)
         thumbPath = try container.decode(String.self, forKey: .thumbPath)
         blurPath = try container.decode(String.self, forKey: .blurPath)
+        videoPath = try container.decodeIfPresent(String.self, forKey: .videoPath)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         expiresAt = try container.decode(Date.self, forKey: .expiresAt)
         reactions = try container.decodeIfPresent([Reaction].self, forKey: .reactions) ?? []

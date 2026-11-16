@@ -207,6 +207,11 @@ struct PinDetailViewer: View {
                     Theme.surface
                 }
             }
+            .overlay {
+                if !isLocked, let path = pin.videoPath {
+                    RemoteVideoView(key: "pins/\(path)", isPlaying: etaPin == nil && !isReplyFocused)
+                }
+            }
             .blur(radius: isLocked ? 18 : 0, opaque: true)
             .overlay {
                 if isLocked {
@@ -482,8 +487,9 @@ struct PinDetailViewer: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
                     .frame(maxWidth: .infinity)
-                    .background(Capsule().fill(isMine ? Theme.electricViolet.opacity(0.35) : Color.white.opacity(0.07)))
-                    .overlay(Capsule().strokeBorder(isMine ? Theme.neonPurple : Color.white.opacity(0.12), lineWidth: 1))
+                    .background(Capsule().fill(isMine ? Theme.electricViolet.opacity(0.3) : Theme.surface.opacity(0.95)))
+                    .overlay(Capsule().strokeBorder(isMine ? Theme.neonPurple : Theme.ink.opacity(0.14), lineWidth: 1))
+                    .shadow(color: Color.black.opacity(0.08), radius: 6, y: 2)
                 }
                 .buttonStyle(PressableButtonStyle(pressedScale: 0.88))
                 .accessibilityLabel(Text(verbatim: emoji))

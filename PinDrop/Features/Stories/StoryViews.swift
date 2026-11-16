@@ -191,6 +191,8 @@ struct StoryViewerView: View {
     @State private var isViewersPresented = false
     @State private var isDeleteConfirmPresented = false
     @State private var sentReplyNotice = false
+    /// Length of each video story, known once it is downloaded.
+    @State private var videoDurations: [UUID: Double] = [:]
     @FocusState private var isReplyFocused: Bool
 
     private var social: SocialStore { appState.social }
@@ -301,17 +303,25 @@ struct StoryViewerView: View {
 
     @ViewBuilder
     private func photo(_ story: StoryItem) -> some View {
-        if let image = social.image(for: story.imageKey) {
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFill()
-        } else {
-            ZStack {
-                LinearGradient(colors: [Color(hex: 0x1E1B4B), Color.black], startPoint: .top, endPoint: .bottom)
-                ProgressView()
-                    .tint(Color.white)
+        ZStack {
+            if let image = social.image(for: story.imageKey) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                ZStack {
+                    LinearGradient(colors: [Color(hex: 0x1E1B4B), Color.black], startPoint: .top, endPoint: .bottom)
+                    ProgressView()
+                        .tint(Color.white)
+                }
+                .onAppear { social.loadImage(story.imageKey) }
             }
-            .onAppear { social.loadImage(story.imageKey) }
+            if let videoKey = story.videoKey {
+                let storyID = story.id
+                RemoteVideoView(key: videoKey, isPlaying: !isPaused) { duration in
+                    videoDurations[storyID] = duration
+                }
+            }
         }
     }
 
@@ -546,7 +556,14 @@ struct StoryViewerView: View {
             try? await Task.sleep(for: .milliseconds(16))
             guard !Task.isCancelled else { return }
             guard !isPaused, social.image(for: story.imageKey) != nil else { continue }
-            progress += step / Self.storyDuration
+            let duration: Double
+            if story.videoKey != nil {
+                guard let length = videoDurations[story.id] else { continue }
+                duration = length
+            } else {
+                duration = Self.storyDuration
+            }
+            progress += step / duration
             if progress >= 1 {
                 progress = 1
                 next()

@@ -12,6 +12,18 @@ struct CameraStudioView: View {
     @State private var capturedShot: CapturedShot?
     @State private var storyShot: CapturedShot?
     @State private var captureMode: CaptureMode = .pin
+    // Video: hold the shutter to record, slide up to lock.
+    @State private var isRecording = false
+    @State private var isStartingVideo = false
+    @State private var stopWhenStarted = false
+    @State private var isLocked = false
+    @State private var lockDrag: CGFloat = 0
+    @State private var pressStart: Date?
+    @State private var pressBeganWhileRecording = false
+    @State private var holdTask: Task<Void, Never>?
+    @State private var recordTask: Task<Void, Never>?
+    @State private var recordProgress: Double = 0
+    @State private var recordLocationTask: Task<GeoPoint?, Never>?
     @State private var isProcessing = false
     @State private var flashOverlayOpacity: Double = 0
     @State private var errorMessage: String?
@@ -44,6 +56,7 @@ struct CameraStudioView: View {
             if locationService.authorizationStatus == .notDetermined {
                 await locationService.requestAuthorization()
             }
+            await camera.prepareMicrophone()
         }
         .onAppear {
             if appState.social.prefersStoryCapture {
@@ -52,6 +65,10 @@ struct CameraStudioView: View {
             }
         }
         .onDisappear {
+            recordTask?.cancel()
+            if isRecording {
+                Task { _ = await camera.stopRecording() }
+            }
             camera.stop()
         }
         .fullScreenCover(item: $storyShot) { shot in
@@ -271,7 +288,15 @@ struct CameraStudioView: View {
 
     private var bottomControls: some View {
         VStack(spacing: 14) {
-            modeSwitch
+            ZStack {
+                modeSwitch
+                    .opacity(isRecording ? 0 : 1)
+                if isRecording {
+                    recordingInfo
+                        .transition(.opacity)
+                }
+            }
+            .animation(Theme.spring, value: isRecording)
             HStack {
                 VStack(spacing: 4) {
                     Image(systemName: captureMode == .story ? "circle.dashed" : "timer")
@@ -297,12 +322,12 @@ struct CameraStudioView: View {
                     Image(systemName: "arrow.triangle.2.circlepath.camera.fill")
                 }
                 .buttonStyle(CircleGlassButtonStyle(diameter: 56))
-                .disabled(camera.status != .running || isProcessing)
+                .disabled(camera.status != .running || isProcessing || isStartingVideo)
                 .frame(width: 72)
                 .accessibilityLabel(Text("camera.flip"))
             }
 
-            Text(captureMode == .story ? LocalizedStringKey("story.camera.hint") : LocalizedStringKey("camera.hint"))
+            Text(isRecording ? LocalizedStringKey(isLocked ? "camera.video.lockedHint" : "camera.video.holdHint") : (captureMode == .story ? LocalizedStringKey("story.camera.hint") : LocalizedStringKey("camera.hint")))
                 .font(Theme.text(.caption))
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
@@ -340,29 +365,202 @@ struct CameraStudioView: View {
         .background(Color.white.opacity(0.1), in: Capsule())
     }
 
+    /// Tap for a photo, hold for a video (max 10 s), slide up while holding to lock.
     private var shutterButton: some View {
-        Button {
-            capture()
-        } label: {
-            ZStack {
+        ZStack {
+            Circle()
+                .strokeBorder(Color.white, lineWidth: 5)
+                .frame(width: 86, height: 86)
+                .scaleEffect(isRecording ? 1.18 : 1)
+            if isRecording {
                 Circle()
-                    .strokeBorder(Color.white, lineWidth: 5)
-                    .frame(width: 86, height: 86)
+                    .trim(from: 0, to: recordProgress)
+                    .stroke(Theme.danger, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: 101, height: 101)
+            }
+            if isRecording {
+                RoundedRectangle(cornerRadius: isLocked ? 8 : 35, style: .continuous)
+                    .fill(Theme.danger)
+                    .frame(width: isLocked ? 34 : 62, height: isLocked ? 34 : 62)
+            } else {
                 Circle()
                     .fill(captureMode == .story ? AnyShapeStyle(StoryRingStyle.angular) : AnyShapeStyle(Theme.accentGradient))
                     .frame(width: 70, height: 70)
                     .scaleEffect(isProcessing ? 0.82 : 1)
                     .glow(Theme.electricViolet, radius: 14)
-                if isProcessing {
-                    ProgressView()
-                        .tint(Color.white)
+            }
+            if isProcessing {
+                ProgressView()
+                    .tint(Color.white)
+            }
+        }
+        .frame(width: 104, height: 104)
+        .contentShape(Circle())
+        .overlay(alignment: .top) {
+            if isRecording && !isLocked {
+                VStack(spacing: 4) {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Color.white)
+                        .frame(width: 38, height: 38)
+                        .background(Color.white.opacity(lockDrag < -40 ? 0.35 : 0.15), in: Circle())
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(Color.white.opacity(0.7))
+                }
+                .offset(y: -64 + min(0, lockDrag) * 0.3)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+        }
+        .animation(Theme.spring, value: isRecording)
+        .animation(Theme.spring, value: isLocked)
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged(shutterChanged)
+                .onEnded(shutterEnded)
+        )
+        .disabled(camera.status != .running || isProcessing)
+        .accessibilityElement()
+        .accessibilityLabel(Text("camera.shutter"))
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { capture() }
+    }
+
+    /// "● 0:04" while recording.
+    private var recordingInfo: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(Theme.danger)
+                .frame(width: 8, height: 8)
+                .pulsing()
+            Text(verbatim: String(format: "0:%02d", Int(recordProgress * VideoTools.maxDuration)))
+                .font(Theme.rounded(.subheadline, weight: .heavy))
+                .monospacedDigit()
+                .foregroundStyle(Color.white)
+            if isLocked {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Color.white.opacity(0.8))
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .background(Color.black.opacity(0.4), in: Capsule())
+    }
+
+    private func shutterChanged(_ value: DragGesture.Value) {
+        if pressStart == nil {
+            pressStart = .now
+            pressBeganWhileRecording = isRecording
+            if !isRecording && !isStartingVideo {
+                holdTask?.cancel()
+                holdTask = Task {
+                    try? await Task.sleep(for: .milliseconds(280))
+                    guard !Task.isCancelled else { return }
+                    await startVideo()
                 }
             }
-            .animation(Theme.spring, value: isProcessing)
         }
-        .buttonStyle(PressableButtonStyle(pressedScale: 0.9))
-        .disabled(camera.status != .running || isProcessing)
-        .accessibilityLabel(Text("camera.shutter"))
+        guard (isRecording || isStartingVideo), !isLocked, !pressBeganWhileRecording else { return }
+        lockDrag = value.translation.height
+        if value.translation.height < -70 {
+            isLocked = true
+            lockDrag = 0
+            HapticManager.shared.success()
+        }
+    }
+
+    private func shutterEnded(_ value: DragGesture.Value) {
+        holdTask?.cancel()
+        let duration = Date.now.timeIntervalSince(pressStart ?? .now)
+        let beganWhileRecording = pressBeganWhileRecording
+        pressStart = nil
+        lockDrag = 0
+        if isRecording {
+            // Unlocked: releasing stops. Locked: a new tap on the shutter stops.
+            if !isLocked || beganWhileRecording {
+                Task { await stopVideo() }
+            }
+        } else if isStartingVideo {
+            if !isLocked { stopWhenStarted = true }
+        } else if duration < 0.28 {
+            capture()
+        }
+    }
+
+    private func startVideo() async {
+        guard !isProcessing, !isRecording, camera.status == .running else { return }
+        isStartingVideo = true
+        stopWhenStarted = false
+        HapticManager.shared.tap()
+        let locationService = self.locationService
+        recordLocationTask = Task { await locationService.currentLocation(maximumAge: 20, timeout: 2) }
+        let started = await camera.startRecording()
+        isStartingVideo = false
+        guard started else {
+            isLocked = false
+            HapticManager.shared.error()
+            return
+        }
+        isRecording = true
+        recordProgress = 0
+        let start = Date.now
+        recordTask?.cancel()
+        recordTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(33))
+                let elapsed = Date.now.timeIntervalSince(start)
+                recordProgress = min(1, elapsed / VideoTools.maxDuration)
+                if elapsed >= VideoTools.maxDuration {
+                    await stopVideo()
+                    return
+                }
+            }
+        }
+        if stopWhenStarted {
+            stopWhenStarted = false
+            await stopVideo()
+        }
+    }
+
+    private func stopVideo() async {
+        guard isRecording else { return }
+        recordTask?.cancel()
+        recordTask = nil
+        isRecording = false
+        isLocked = false
+        isProcessing = true
+        HapticManager.shared.tap()
+        let url = await camera.stopRecording()
+        let location = await recordLocationTask?.value
+        recordLocationTask = nil
+        defer {
+            isProcessing = false
+            recordProgress = 0
+        }
+        guard let url, await VideoTools.duration(of: url) >= 0.4 else {
+            // Too short: treat it as nothing.
+            return
+        }
+        guard let poster = await VideoTools.posterJPEG(for: url) else {
+            errorMessage = CameraError.captureFailed.localizedDescription
+            return
+        }
+        let processed = await Task.detached(priority: .userInitiated) {
+            ImageCompressor.process(poster)
+        }.value
+        guard let processed, let preview = UIImage(data: processed.fullData) else {
+            errorMessage = CameraError.captureFailed.localizedDescription
+            return
+        }
+        var shot = CapturedShot(previewImage: preview, processed: processed, location: location, capturedAt: .now)
+        shot.videoURL = url
+        if captureMode == .story {
+            storyShot = shot
+        } else {
+            capturedShot = shot
+        }
     }
 
     // MARK: - Actions

@@ -1113,10 +1113,13 @@ final class AppState {
 
     /// Publishes a live drop. If the map was locked, it unlocks instantly with an animation.
     @discardableResult
-    func publish(processed: ProcessedImage, location: GeoPoint, placeName: String?, caption: String, syncSessionID: UUID? = nil) async throws -> PhotoPin {
+    func publish(processed: ProcessedImage, location: GeoPoint, placeName: String?, caption: String, syncSessionID: UUID? = nil, video: URL? = nil) async throws -> PhotoPin {
         let wasLocked = !isUnlocked
-        let draft = PinDraft(image: processed, location: location, placeName: placeName, caption: caption, syncSessionID: syncSessionID)
+        let draft = PinDraft(image: processed, location: location, placeName: placeName, caption: caption, syncSessionID: syncSessionID, video: video)
         let pin = try await dataService.publishPin(draft)
+        if let video, let path = pin.videoPath {
+            dataService.cacheVideo(video, key: "pins/\(path)")
+        }
         images[pin.imagePath] = processed.fullData
         images[pin.thumbPath] = processed.thumbnailData
         images[pin.blurPath] = processed.blurData
@@ -1863,15 +1866,19 @@ extension AppState {
     }
 
     /// Hides a Geo-Capsule at the current spot for 24 hours.
-    func hideCapsule(processed: ProcessedImage, location: GeoPoint, hint: String, message: String, recipient: UserProfile?) async throws {
+    func hideCapsule(processed: ProcessedImage, location: GeoPoint, hint: String, message: String, recipient: UserProfile?, video: URL? = nil) async throws {
         let draft = CapsuleDraft(
             image: processed,
+            video: video,
             location: location,
             hint: hint.trimmingCharacters(in: .whitespacesAndNewlines),
             message: message.trimmingCharacters(in: .whitespacesAndNewlines),
             recipientID: recipient?.id
         )
         let capsule = try await dataService.createCapsule(draft)
+        if let video, let path = capsule.videoPath {
+            dataService.cacheVideo(video, key: "capsules/\(path)")
+        }
         images[Self.capsuleImageKey(capsule.imagePath)] = processed.fullData
         images[Self.capsuleImageKey(capsule.thumbPath)] = processed.thumbnailData
         capsuleSecrets[capsule.id] = draft.message

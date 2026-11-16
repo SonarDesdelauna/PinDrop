@@ -40,6 +40,9 @@ struct PinAnnotationView: View {
                 if isLocked {
                     lockBadge
                         .transition(.scale.combined(with: .opacity))
+                } else if pin.videoPath != nil {
+                    VideoBadge()
+                        .offset(x: diameter * 0.36, y: diameter * 0.36)
                 }
             }
             .frame(width: ringDiameter + 4, height: ringDiameter + 4)

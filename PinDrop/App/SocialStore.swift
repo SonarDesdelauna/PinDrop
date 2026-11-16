@@ -349,11 +349,14 @@ final class SocialStore {
 
     // MARK: - Stories
 
-    func publishStory(photo: Data, overlayText: String, overlayY: Double, locationTag: String?) async throws {
+    func publishStory(photo: Data, video: URL? = nil, overlayText: String, overlayY: Double, locationTag: String?) async throws {
         isPublishingStory = true
         defer { isPublishingStory = false }
-        let story = try await dataService.publishStory(photo: photo, overlayText: overlayText, overlayY: overlayY, locationTag: locationTag)
+        let story = try await dataService.publishStory(photo: photo, video: video, overlayText: overlayText, overlayY: overlayY, locationTag: locationTag)
         images[story.imageKey] = photo
+        if let video, let key = story.videoKey {
+            dataService.cacheVideo(video, key: key)
+        }
         serverStories.append(story)
         rebuild()
     }

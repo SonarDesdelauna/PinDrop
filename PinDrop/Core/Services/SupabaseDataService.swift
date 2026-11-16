@@ -9,6 +9,8 @@ struct PinDraft: Sendable {
     let caption: String
     /// Set when the pin is one half of a Sync Shot.
     var syncSessionID: UUID? = nil
+    /// A video (max 10 s) recorded instead of a photo; `image` is its first frame.
+    var video: URL? = nil
 }
 
 enum DataServiceError: LocalizedError, Sendable, Equatable {
@@ -229,6 +231,7 @@ final class SupabaseDataService: Sendable {
             let image_path: String
             let thumb_path: String
             let blur_path: String
+            let video_path: String?
             let sync_session_id: UUID?
         }
 
@@ -238,12 +241,16 @@ final class SupabaseDataService: Sendable {
         let fullPath = "\(folder)/full.jpg"
         let thumbPath = "\(folder)/thumb.jpg"
         let blurPath = "\(folder)/blur.jpg"
+        let videoPath = "\(folder)/video.mp4"
         let options = FileOptions(cacheControl: "21600", contentType: "image/jpeg", upsert: false)
 
         do {
             _ = try await pinsBucket.upload(fullPath, data: draft.image.fullData, options: options)
             _ = try await pinsBucket.upload(thumbPath, data: draft.image.thumbnailData, options: options)
             _ = try await pinsBucket.upload(blurPath, data: draft.image.blurData, options: options)
+            if let video = draft.video {
+                _ = try await pinsBucket.upload(videoPath, data: try Data(contentsOf: video), options: Self.videoOptions(cache: "21600"))
+            }
 
             let row = NewPin(
                 id: pinID,
@@ -254,6 +261,7 @@ final class SupabaseDataService: Sendable {
                 image_path: fullPath,
                 thumb_path: thumbPath,
                 blur_path: blurPath,
+                video_path: draft.video == nil ? nil : videoPath,
                 sync_session_id: draft.syncSessionID
             )
             return try await client
@@ -264,7 +272,7 @@ final class SupabaseDataService: Sendable {
                 .execute()
                 .value
         } catch {
-            _ = try? await pinsBucket.remove(paths: [fullPath, thumbPath, blurPath])
+            _ = try? await pinsBucket.remove(paths: [fullPath, thumbPath, blurPath, videoPath])
             throw error
         }
     }
@@ -636,6 +644,7 @@ final class SupabaseDataService: Sendable {
             let hint: String
             let image_path: String
             let thumb_path: String
+            let video_path: String?
             let recipient_id: UUID?
         }
         struct NewSecret: Encodable, Sendable {
@@ -648,11 +657,15 @@ final class SupabaseDataService: Sendable {
         let folder = "\(Self.storageID(uid))/\(Self.storageID(capsuleID))"
         let fullPath = "\(folder)/full.jpg"
         let thumbPath = "\(folder)/thumb.jpg"
+        let videoPath = "\(folder)/video.mp4"
         let options = FileOptions(cacheControl: "86400", contentType: "image/jpeg", upsert: false)
 
         do {
             _ = try await capsulesBucket.upload(fullPath, data: draft.image.fullData, options: options)
             _ = try await capsulesBucket.upload(thumbPath, data: draft.image.thumbnailData, options: options)
+            if let video = draft.video {
+                _ = try await capsulesBucket.upload(videoPath, data: try Data(contentsOf: video), options: Self.videoOptions(cache: "86400"))
+            }
             let capsule: GeoCapsule = try await client
                 .from("geo_capsules")
                 .insert(NewCapsule(
@@ -662,6 +675,7 @@ final class SupabaseDataService: Sendable {
                     hint: String(draft.hint.prefix(GeoCapsule.hintLimit)),
                     image_path: fullPath,
                     thumb_path: thumbPath,
+                    video_path: draft.video == nil ? nil : videoPath,
                     recipient_id: draft.recipientID
                 ))
                 .select(GeoCapsule.selectColumns)
@@ -966,6 +980,34 @@ final class SupabaseDataService: Sendable {
     }
 
     /// Downloads an image from any private bucket, by "bucket/path" key.
+    static func videoOptions(cache: String) -> FileOptions {
+        FileOptions(cacheControl: cache, contentType: "video/mp4", upsert: false)
+    }
+
+    private static func videoCacheURL(for key: String) -> URL {
+        let folder = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("videos", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder.appendingPathComponent(key.replacingOccurrences(of: "/", with: "_"))
+    }
+
+    /// Keeps a video you just published, so it plays without downloading it again.
+    func cacheVideo(_ url: URL, key: String) {
+        let local = Self.videoCacheURL(for: key)
+        try? FileManager.default.removeItem(at: local)
+        try? FileManager.default.copyItem(at: url, to: local)
+    }
+
+    /// Downloads a video ("bucket/path") once and keeps it in Caches, returning the local file.
+    func videoFile(key: String) async throws -> URL {
+        let local = Self.videoCacheURL(for: key)
+        if FileManager.default.fileExists(atPath: local.path) {
+            return local
+        }
+        let data = try await loadImage(key: key)
+        try data.write(to: local, options: .atomic)
+        return local
+    }
+
     func loadImage(key: String) async throws -> Data {
         guard let slash = key.firstIndex(of: "/") else { throw DataServiceError.invalidPayload }
         let bucket = String(key[..<slash])
@@ -986,10 +1028,11 @@ final class SupabaseDataService: Sendable {
     }
 
     /// Uploads the photo and creates a story that lasts 24 hours.
-    func publishStory(photo: Data, overlayText: String, overlayY: Double, locationTag: String?) async throws -> StoryItem {
+    func publishStory(photo: Data, video: URL? = nil, overlayText: String, overlayY: Double, locationTag: String?) async throws -> StoryItem {
         struct NewStory: Encodable, Sendable {
             let id: UUID
             let image_path: String
+            let video_path: String?
             let overlay_text: String
             let overlay_y: Double
             let location_tag: String?
@@ -997,17 +1040,22 @@ final class SupabaseDataService: Sendable {
         let uid = try await currentUserID()
         let storyID = UUID()
         let path = "\(Self.storageID(uid))/\(Self.storageID(storyID)).jpg"
+        let videoPath = "\(Self.storageID(uid))/\(Self.storageID(storyID)).mp4"
         _ = try await client.storage.from("stories").upload(
             path,
             data: photo,
             options: FileOptions(cacheControl: "86400", contentType: "image/jpeg", upsert: false)
         )
         do {
+            if let video {
+                _ = try await client.storage.from("stories").upload(videoPath, data: try Data(contentsOf: video), options: Self.videoOptions(cache: "86400"))
+            }
             return try await client
                 .from("stories")
                 .insert(NewStory(
                     id: storyID,
                     image_path: path,
+                    video_path: video == nil ? nil : videoPath,
                     overlay_text: String(overlayText.prefix(80)),
                     overlay_y: min(max(overlayY, 0), 1),
                     location_tag: locationTag.map { String($0.prefix(120)) }
@@ -1017,7 +1065,7 @@ final class SupabaseDataService: Sendable {
                 .execute()
                 .value
         } catch {
-            _ = try? await client.storage.from("stories").remove(paths: [path])
+            _ = try? await client.storage.from("stories").remove(paths: [path, videoPath])
             throw error
         }
     }
@@ -1041,7 +1089,10 @@ final class SupabaseDataService: Sendable {
             .delete()
             .eq("id", value: story.id)
             .execute()
-        let path = story.imageKey.replacingOccurrences(of: "stories/", with: "")
-        _ = try? await client.storage.from("stories").remove(paths: [path])
+        var paths = [story.imageKey.replacingOccurrences(of: "stories/", with: "")]
+        if let videoKey = story.videoKey {
+            paths.append(videoKey.replacingOccurrences(of: "stories/", with: ""))
+        }
+        _ = try? await client.storage.from("stories").remove(paths: paths)
     }
 }

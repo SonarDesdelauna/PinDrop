@@ -12,7 +12,7 @@ struct GeoCapsule: Identifiable, Decodable, Hashable, Sendable {
     static let hintLimit = 80
     static let messageLimit = 140
 
-    static let selectColumns = "id, latitude, longitude, hint, image_path, thumb_path, created_at, expires_at, recipient_id, author:profiles!geo_capsules_author_id_fkey(*)"
+    static let selectColumns = "id, latitude, longitude, hint, image_path, thumb_path, video_path, created_at, expires_at, recipient_id, author:profiles!geo_capsules_author_id_fkey(*)"
 
     let id: UUID
     var author: UserProfile
@@ -23,6 +23,8 @@ struct GeoCapsule: Identifiable, Decodable, Hashable, Sendable {
     /// Storage paths inside the private `capsules` bucket.
     let imagePath: String
     let thumbPath: String
+    /// The MP4 when the capsule hides a video.
+    var videoPath: String? = nil
     let createdAt: Date
     let expiresAt: Date
 
@@ -35,6 +37,7 @@ struct GeoCapsule: Identifiable, Decodable, Hashable, Sendable {
         case hint
         case imagePath = "image_path"
         case thumbPath = "thumb_path"
+        case videoPath = "video_path"
         case createdAt = "created_at"
         case expiresAt = "expires_at"
     }
@@ -73,6 +76,7 @@ struct GeoCapsule: Identifiable, Decodable, Hashable, Sendable {
         hint = try container.decodeIfPresent(String.self, forKey: .hint) ?? ""
         imagePath = try container.decode(String.self, forKey: .imagePath)
         thumbPath = try container.decode(String.self, forKey: .thumbPath)
+        videoPath = try container.decodeIfPresent(String.self, forKey: .videoPath)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         expiresAt = try container.decode(Date.self, forKey: .expiresAt)
     }
@@ -128,6 +132,7 @@ struct CapsuleOpenRow: Decodable, Hashable, Sendable {
 /// Everything needed to hide a new capsule.
 struct CapsuleDraft: Sendable {
     let image: ProcessedImage
+    var video: URL? = nil
     let location: GeoPoint
     let hint: String
     let message: String

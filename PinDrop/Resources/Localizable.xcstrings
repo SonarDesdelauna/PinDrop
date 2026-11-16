@@ -1827,31 +1827,31 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Live only · no camera roll · your location is saved only with this shot"
+            "value" : "Tap for a photo, hold for a video (max 10 s) · live only, your location is saved only with this shot"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Solo live · niente galleria · la posizione viene salvata solo con questo scatto"
+            "value" : "Tocca per una foto, tieni premuto per un video (max 10 s) · solo live, la posizione viene salvata solo con questo scatto"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Solo en vivo · sin galería · tu ubicación se guarda solo con esta foto"
+            "value" : "Toca para una foto, mantén pulsado para un vídeo (máx. 10 s) · solo en vivo, tu ubicación se guarda solo con esta toma"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Direct uniquement · pas de pellicule · ta position n'est enregistrée qu'avec cette photo"
+            "value" : "Touche pour une photo, maintiens pour une vidéo (10 s max) · direct uniquement, ta position n'est enregistrée qu'avec cette prise"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nur live · keine Mediathek · dein Standort wird nur mit diesem Foto gespeichert"
+            "value" : "Tippen für ein Foto, halten für ein Video (max. 10 s) · nur live, dein Standort wird nur mit dieser Aufnahme gespeichert"
           }
         }
       }
@@ -19007,31 +19007,31 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Take a photo, then add effects, text and stickers if you like."
+            "value" : "Tap for a photo or hold for a video, then add effects, text and stickers if you like."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scatta una foto, poi se vuoi aggiungi effetti, testo e sticker."
+            "value" : "Tocca per una foto o tieni premuto per un video, poi se vuoi aggiungi effetti, testo e sticker."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Haz una foto y, si quieres, añade efectos, texto y stickers."
+            "value" : "Toca para una foto o mantén pulsado para un vídeo y, si quieres, añade efectos, texto y stickers."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Prends une photo, puis ajoute si tu veux effets, texte et stickers."
+            "value" : "Touche pour une photo ou maintiens pour une vidéo, puis ajoute si tu veux effets, texte et stickers."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mach ein Foto und füge dann nach Lust Effekte, Text und Sticker hinzu."
+            "value" : "Tippen für ein Foto oder halten für ein Video, dann nach Lust Effekte, Text und Sticker hinzufügen."
           }
         }
       }
@@ -19522,6 +19522,76 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Noir"
+          }
+        }
+      }
+    },
+    "camera.video.holdHint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Slide up to lock · you can flip the camera while recording"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scorri verso l'alto per bloccare · puoi girare la fotocamera mentre registri"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desliza hacia arriba para bloquear · puedes girar la cámara mientras grabas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Glisse vers le haut pour verrouiller · tu peux changer de caméra pendant l'enregistrement"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nach oben wischen zum Sperren · du kannst beim Filmen die Kamera wechseln"
+          }
+        }
+      }
+    },
+    "camera.video.lockedHint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Locked · tap the shutter to stop, flip to film the other side"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bloccato · tocca lo scatto per fermare, gira la fotocamera per riprendere l'altro lato"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bloqueado · toca el disparador para parar, gira la cámara para grabar el otro lado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verrouillé · touche le déclencheur pour arrêter, change de caméra pour filmer l'autre côté"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gesperrt · Auslöser tippen zum Stoppen, Kamera wechseln für die andere Seite"
           }
         }
       }

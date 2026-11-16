@@ -287,6 +287,42 @@
           }
         }
       }
+    },
+    "NSMicrophoneUsageDescription" : {
+      "comment" : "Info.plist: NSMicrophoneUsageDescription",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop records sound only while you hold the shutter to film a video of up to 10 seconds."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop registra l'audio solo mentre tieni premuto lo scatto per girare un video di massimo 10 secondi."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop graba sonido solo mientras mantienes pulsado el disparador para grabar un vídeo de hasta 10 segundos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop enregistre le son uniquement quand tu maintiens le déclencheur pour filmer une vidéo de 10 secondes maximum."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PinDrop nimmt nur Ton auf, während du den Auslöser für ein Video von bis zu 10 Sekunden gedrückt hältst."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

@@ -298,6 +298,11 @@ struct GeoCapsuleSheet: View {
                         }
                     }
                 }
+                .overlay {
+                    if let path = capsule.videoPath {
+                        RemoteVideoView(key: "capsules/\(path)")
+                    }
+                }
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
@@ -452,6 +457,11 @@ struct CapsuleUnlockCelebrationView: View {
                             ProgressView()
                                 .tint(Color.white)
                         }
+                    }
+                }
+                .overlay {
+                    if let path = capsule.videoPath {
+                        RemoteVideoView(key: "capsules/\(path)")
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))

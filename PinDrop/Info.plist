@@ -47,6 +47,8 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>PinDrop records sound only while you hold the shutter to film a video of up to 10 seconds.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>PinDrop uses the camera to capture live moments you choose to drop on the map. Photos from your library are never used.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
