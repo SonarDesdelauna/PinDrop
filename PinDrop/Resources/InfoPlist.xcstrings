@@ -1,222 +1,258 @@
 {
-  "sourceLanguage" : "en",
-  "strings" : {
-    "CFBundleDisplayName" : {
-      "comment" : "Info.plist: CFBundleDisplayName",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop"
+  "sourceLanguage": "en",
+  "strings": {
+    "CFBundleDisplayName": {
+      "comment": "Info.plist: CFBundleDisplayName",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop"
           }
         },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop"
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop"
           }
         },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop"
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop"
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop"
           }
         },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop"
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop"
           }
         }
       }
     },
-    "CFBundleName" : {
-      "comment" : "Info.plist: CFBundleName",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop"
+    "CFBundleName": {
+      "comment": "Info.plist: CFBundleName",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop"
           }
         },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop"
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop"
           }
         },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop"
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop"
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop"
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop"
           }
         },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop"
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop"
           }
         }
       }
     },
-    "NSCameraUsageDescription" : {
-      "comment" : "Info.plist: NSCameraUsageDescription",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop uses the camera to capture live moments you choose to drop on the map. Photos from your library are never used."
+    "NSCameraUsageDescription": {
+      "comment": "Info.plist: NSCameraUsageDescription",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop uses the camera to capture live moments you choose to drop on the map. Photos from your library are never used."
           }
         },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop usa la fotocamera per scattare i momenti live che scegli di pubblicare sulla mappa. Le foto della tua libreria non vengono mai usate."
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop usa la fotocamera per scattare i momenti live che scegli di pubblicare sulla mappa. Le foto della tua libreria non vengono mai usate."
           }
         },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop usa la cámara para capturar los momentos en vivo que eliges publicar en el mapa. Nunca se usan las fotos de tu fototeca."
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop usa la cámara para capturar los momentos en vivo que eliges publicar en el mapa. Nunca se usan las fotos de tu fototeca."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop utilise l'appareil photo pour capturer les moments en direct que tu choisis de publier sur la carte. Les photos de ta photothèque ne sont jamais utilisées."
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop utilise l'appareil photo pour capturer les moments en direct que tu choisis de publier sur la carte. Les photos de ta photothèque ne sont jamais utilisées."
           }
         },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop verwendet die Kamera, um Live-Momente aufzunehmen, die du auf der Karte teilen möchtest. Fotos aus deiner Mediathek werden nie verwendet."
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop verwendet die Kamera, um Live-Momente aufzunehmen, die du auf der Karte teilen möchtest. Fotos aus deiner Mediathek werden nie verwendet."
           }
         }
       }
     },
-    "NSLocationWhenInUseUsageDescription" : {
-      "comment" : "Info.plist: NSLocationWhenInUseUsageDescription",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop uses your location to pin your photos, show you and your friends on the map, count visits to your saved places and time spent with friends. Your position is shared only with your friends."
+    "NSLocationWhenInUseUsageDescription": {
+      "comment": "Info.plist: NSLocationWhenInUseUsageDescription",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop uses your location to pin your photos, show you and your friends on the map, count visits to your saved places and time spent with friends. Your position is shared only with your friends."
           }
         },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop usa la tua posizione per fissare le tue foto, mostrare te e i tuoi amici sulla mappa, contare le visite ai tuoi posti salvati e il tempo passato con gli amici. La tua posizione è condivisa solo con i tuoi amici."
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop usa la tua posizione per fissare le tue foto, mostrare te e i tuoi amici sulla mappa, contare le visite ai tuoi posti salvati e il tempo passato con gli amici. La tua posizione è condivisa solo con i tuoi amici."
           }
         },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop usa tu ubicación para fijar tus fotos, mostrarte a ti y a tus amigos en el mapa, contar visitas a tus lugares guardados y el tiempo con amigos. Tu ubicación solo se comparte con tus amigos."
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop usa tu ubicación para fijar tus fotos, mostrarte a ti y a tus amigos en el mapa, contar visitas a tus lugares guardados y el tiempo con amigos. Tu ubicación solo se comparte con tus amigos."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop utilise ta position pour épingler tes photos, te montrer avec tes amis sur la carte, compter tes visites à tes lieux et le temps passé avec tes amis. Ta position n'est partagée qu'avec tes amis."
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop utilise ta position pour épingler tes photos, te montrer avec tes amis sur la carte, compter tes visites à tes lieux et le temps passé avec tes amis. Ta position n'est partagée qu'avec tes amis."
           }
         },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop nutzt deinen Standort, um deine Fotos zu pinnen, dich und deine Freunde auf der Karte zu zeigen, Besuche deiner Orte und die Zeit mit Freunden zu zählen. Dein Standort wird nur mit deinen Freunden geteilt."
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop nutzt deinen Standort, um deine Fotos zu pinnen, dich und deine Freunde auf der Karte zu zeigen, Besuche deiner Orte und die Zeit mit Freunden zu zählen. Dein Standort wird nur mit deinen Freunden geteilt."
           }
         }
       }
     },
-    "NSLocationAlwaysAndWhenInUseUsageDescription" : {
-      "comment" : "Info.plist: NSLocationAlwaysAndWhenInUseUsageDescription",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "With “Always”, your friends keep seeing where you are on the map even when PinDrop is closed. Updates are sent only when you move a significant distance, to save battery, and only your friends can see them."
+    "NSLocationAlwaysAndWhenInUseUsageDescription": {
+      "comment": "Info.plist: NSLocationAlwaysAndWhenInUseUsageDescription",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "With “Always”, your friends keep seeing where you are on the map even when PinDrop is closed. Updates are sent only when you move a significant distance, to save battery, and only your friends can see them."
           }
         },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Con “Sempre” i tuoi amici continuano a vedere dove sei sulla mappa anche quando PinDrop è chiusa. Gli aggiornamenti partono solo quando ti sposti in modo significativo, per risparmiare batteria, e li vedono solo i tuoi amici."
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Con “Sempre” i tuoi amici continuano a vedere dove sei sulla mappa anche quando PinDrop è chiusa. Gli aggiornamenti partono solo quando ti sposti in modo significativo, per risparmiare batteria, e li vedono solo i tuoi amici."
           }
         },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Con “Siempre” tus amigos siguen viendo dónde estás en el mapa aunque PinDrop esté cerrada. Solo se envían actualizaciones cuando te desplazas bastante, para ahorrar batería, y solo las ven tus amigos."
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Con “Siempre” tus amigos siguen viendo dónde estás en el mapa aunque PinDrop esté cerrada. Solo se envían actualizaciones cuando te desplazas bastante, para ahorrar batería, y solo las ven tus amigos."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Avec « Toujours », tes amis continuent de voir où tu es sur la carte même quand PinDrop est fermé. Les mises à jour ne partent que lors de déplacements importants, pour économiser la batterie, et seuls tes amis les voient."
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avec « Toujours », tes amis continuent de voir où tu es sur la carte même quand PinDrop est fermé. Les mises à jour ne partent que lors de déplacements importants, pour économiser la batterie, et seuls tes amis les voient."
           }
         },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mit „Immer“ sehen deine Freunde auch bei geschlossenem PinDrop, wo du bist. Aktualisierungen werden nur bei größeren Ortswechseln gesendet, um Akku zu sparen, und nur deine Freunde sehen sie."
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit „Immer“ sehen deine Freunde auch bei geschlossenem PinDrop, wo du bist. Aktualisierungen werden nur bei größeren Ortswechseln gesendet, um Akku zu sparen, und nur deine Freunde sehen sie."
           }
         }
       }
     },
-    "NSContactsUsageDescription" : {
-      "comment" : "Info.plist: NSContactsUsageDescription",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop checks which of your contacts already use the app so you can add them, or invite the others by message. Contacts are compared as anonymous hashes and never stored."
+    "NSContactsUsageDescription": {
+      "comment": "Info.plist: NSContactsUsageDescription",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop checks which of your contacts already use the app so you can add them, or invite the others by message. Contacts are compared as anonymous hashes and never stored."
           }
         },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop controlla quali dei tuoi contatti usano già l'app per aggiungerli, o invitare gli altri via messaggio. I contatti vengono confrontati come impronte anonime e mai salvati."
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop controlla quali dei tuoi contatti usano già l'app per aggiungerli, o invitare gli altri via messaggio. I contatti vengono confrontati come impronte anonime e mai salvati."
           }
         },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop comprueba cuáles de tus contactos ya usan la app para que los añadas, o invites al resto por mensaje. Los contactos se comparan como huellas anónimas y nunca se guardan."
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop comprueba cuáles de tus contactos ya usan la app para que los añadas, o invites al resto por mensaje. Los contactos se comparan como huellas anónimas y nunca se guardan."
           }
         },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop vérifie lesquels de tes contacts utilisent déjà l'app pour les ajouter, ou inviter les autres par message. Les contacts sont comparés sous forme d'empreintes anonymes et jamais enregistrés."
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop vérifie lesquels de tes contacts utilisent déjà l'app pour les ajouter, ou inviter les autres par message. Les contacts sont comparés sous forme d'empreintes anonymes et jamais enregistrés."
           }
         },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PinDrop prüft, welche deiner Kontakte die App schon nutzen, damit du sie hinzufügen oder die anderen per Nachricht einladen kannst. Kontakte werden als anonyme Hashes verglichen und nie gespeichert."
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop prüft, welche deiner Kontakte die App schon nutzen, damit du sie hinzufügen oder die anderen per Nachricht einladen kannst. Kontakte werden als anonyme Hashes verglichen und nie gespeichert."
+          }
+        }
+      }
+    },
+    "NSPhotoLibraryUsageDescription": {
+      "comment": "Info.plist: NSPhotoLibraryUsageDescription",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop reads the Live Photo you choose so it can play on your profile."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop legge la Live Photo che scegli per riprodurla sul tuo profilo."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop lee la Live Photo que eliges para reproducirla en tu perfil."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop lit la Live Photo que tu choisis pour l'animer sur ton profil."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PinDrop liest das gewählte Live Photo, damit es auf deinem Profil abgespielt wird."
           }
         }
       }
     }
   },
-  "version" : "1.0"
+  "version": "1.0"
 }

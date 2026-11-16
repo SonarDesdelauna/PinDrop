@@ -180,7 +180,7 @@ struct GeoCapsuleSheet: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
         .task {
             await appState.loadCapsuleContent(capsule)
         }

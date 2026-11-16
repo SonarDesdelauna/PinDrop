@@ -23,6 +23,7 @@ struct EditProfileView: View {
     @State private var pickerItem: PhotosPickerItem?
     @State private var newAvatarData: Data?
     @State private var newAvatarImage: UIImage?
+    @State private var newLiveDraft: LiveAvatarDraft?
     @State private var removeAvatar = false
     @State private var usernameState: UsernameState = .unchanged
     @State private var isSaving = false
@@ -51,6 +52,8 @@ struct EditProfileView: View {
         var preview = draft
         if removeAvatar {
             preview.avatarPath = nil
+            preview.avatarLivePhotoPath = nil
+            preview.avatarLiveVideoPath = nil
         }
         return preview
     }
@@ -110,7 +113,7 @@ struct EditProfileView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
         .interactiveDismissDisabled(isSaving)
         .onAppear {
             guard !didLoadDraft else { return }
@@ -146,13 +149,10 @@ struct EditProfileView: View {
         VStack(spacing: 12) {
             ZStack {
                 if let newAvatarImage {
-                    Image(uiImage: newAvatarImage)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 112, height: 112)
-                        .clipShape(Circle())
+                    LiveAvatarView(user: previewProfile, size: 112, draft: newLiveDraft, stillImage: newAvatarImage)
+                        .id(newLiveDraft.map { "live-\($0.video.count)" } ?? "still")
                 } else {
-                    AvatarBadge(user: previewProfile, size: 112)
+                    LiveAvatarView(user: previewProfile, size: 112)
                 }
             }
             .padding(4)
@@ -162,7 +162,7 @@ struct EditProfileView: View {
             .shadow(color: Color(hexString: draft.avatarColorHex).opacity(0.5), radius: 18)
 
             HStack(spacing: 10) {
-                PhotosPicker(selection: $pickerItem, matching: .images, photoLibrary: .shared()) {
+                PhotosPicker(selection: $pickerItem, matching: .any(of: [.images, .livePhotos]), photoLibrary: .shared()) {
                     Label("profile.photo.choose", systemImage: "photo.on.rectangle")
                         .font(Theme.text(.footnote, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary)
@@ -176,6 +176,7 @@ struct EditProfileView: View {
                         withAnimation(Theme.spring) {
                             newAvatarData = nil
                             newAvatarImage = nil
+                            newLiveDraft = nil
                             pickerItem = nil
                             removeAvatar = true
                         }
@@ -359,11 +360,11 @@ struct EditProfileView: View {
                         .frame(maxWidth: .infinity, minHeight: 46)
                         .background(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(isSelected ? Theme.electricViolet.opacity(0.35) : Color.white.opacity(0.05))
+                                .fill(isSelected ? Theme.electricViolet.opacity(0.35) : Theme.ink.opacity(0.05))
                         )
                         .overlay {
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .strokeBorder(isSelected ? Theme.neonPurple : Color.white.opacity(0.08), lineWidth: isSelected ? 2 : 1)
+                                .strokeBorder(isSelected ? Theme.neonPurple : Theme.ink.opacity(0.08), lineWidth: isSelected ? 2 : 1)
                         }
                     }
                     .buttonStyle(PressableButtonStyle())
@@ -440,8 +441,15 @@ struct EditProfileView: View {
         withAnimation(Theme.spring) {
             newAvatarData = processed
             newAvatarImage = image
+            newLiveDraft = nil
             removeAvatar = false
             errorMessage = nil
+        }
+        // A Live Photo keeps its original still + video so it can play on the profile.
+        let live = await LivePhotoLoader.draft(from: item)
+        guard pickerItem == item else { return }
+        withAnimation(Theme.spring) {
+            newLiveDraft = live
         }
     }
 
@@ -455,7 +463,7 @@ struct EditProfileView: View {
         profile.bio = draft.bio.trimmingCharacters(in: .whitespacesAndNewlines)
         Task {
             do {
-                try await appState.saveProfile(profile, newAvatar: newAvatarData, removeAvatar: removeAvatar)
+                try await appState.saveProfile(profile, newAvatar: newAvatarData, removeAvatar: removeAvatar, newLive: newLiveDraft)
                 isSaving = false
                 if mode == .edit {
                     dismiss()

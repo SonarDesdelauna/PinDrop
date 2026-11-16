@@ -122,6 +122,31 @@ final class SupabaseDataService: Sendable {
         return path
     }
 
+    /// Uploads the original still + paired video of a Live Photo profile picture.
+    func uploadLiveAvatar(_ draft: LiveAvatarDraft) async throws -> (photo: String, video: String) {
+        let uid = try await currentUserID()
+        let stamp = Int(Date.now.timeIntervalSince1970)
+        let photoPath = "\(Self.storageID(uid))/live-\(stamp).\(draft.photoExtension)"
+        let videoPath = "\(Self.storageID(uid))/live-\(stamp).mov"
+        let photoType = draft.photoExtension == "heic" ? "image/heic" : "image/jpeg"
+        _ = try await avatarsBucket.upload(
+            photoPath,
+            data: draft.photo,
+            options: FileOptions(cacheControl: "31536000", contentType: photoType, upsert: true)
+        )
+        do {
+            _ = try await avatarsBucket.upload(
+                videoPath,
+                data: draft.video,
+                options: FileOptions(cacheControl: "31536000", contentType: "video/quicktime", upsert: true)
+            )
+        } catch {
+            _ = try? await avatarsBucket.remove(paths: [photoPath])
+            throw error
+        }
+        return (photoPath, videoPath)
+    }
+
     func deleteAvatar(path: String) async {
         _ = try? await avatarsBucket.remove(paths: [path])
     }

@@ -586,7 +586,7 @@ struct SyncShotPill: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text("sync.pill.title")
                     .font(Theme.rounded(.subheadline, weight: .heavy))
-                    .foregroundStyle(Color.white)
+                    .foregroundStyle(Theme.textPrimary)
                 Text("sync.pill.subtitle \(names)")
                     .font(Theme.text(.caption2, weight: .semibold))
                     .foregroundStyle(Theme.textSecondary)

@@ -321,7 +321,7 @@ struct PlacesView: View {
                                 placeRow(place)
                                 if index < appState.places.count - 1 {
                                     Divider()
-                                        .overlay(Color.white.opacity(0.06))
+                                        .overlay(Theme.ink.opacity(0.06))
                                         .padding(.leading, 70)
                                 }
                             }
@@ -359,7 +359,7 @@ struct PlacesView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
         .task {
             await appState.reloadPlaces()
         }
@@ -448,7 +448,7 @@ struct PlacesView: View {
                 Text(verbatim: place.emoji)
                     .font(.system(size: 24))
                     .frame(width: 44, height: 44)
-                    .background(Circle().fill(Color.white.opacity(0.06)))
+                    .background(Circle().fill(Theme.ink.opacity(0.06)))
                     .overlay {
                         if isCurrent {
                             Circle().strokeBorder(Theme.emeraldGradient, lineWidth: 2)
@@ -609,11 +609,11 @@ struct PlaceEditorView: View {
                                         .frame(maxWidth: .infinity, minHeight: 46)
                                         .background(
                                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                                .fill(isSelected ? Theme.electricViolet.opacity(0.35) : Color.white.opacity(0.05))
+                                                .fill(isSelected ? Theme.electricViolet.opacity(0.35) : Theme.ink.opacity(0.05))
                                         )
                                         .overlay {
                                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                                .strokeBorder(isSelected ? Theme.neonPurple : Color.white.opacity(0.08), lineWidth: isSelected ? 2 : 1)
+                                                .strokeBorder(isSelected ? Theme.neonPurple : Theme.ink.opacity(0.08), lineWidth: isSelected ? 2 : 1)
                                         }
                                 }
                                 .buttonStyle(PressableButtonStyle())
@@ -687,7 +687,7 @@ struct PlaceEditorView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
         .onAppear {
             guard !didLoad else { return }
             didLoad = true

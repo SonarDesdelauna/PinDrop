@@ -18,6 +18,13 @@ struct MainMapView: View {
     @State private var metersPerPoint: Double = 0
     @State private var mapHeading: Double = 0
     @State private var mapHeight: CGFloat = 0
+    /// Last camera reported by the map, used by the edge zoom gesture.
+    @State private var lastCamera: MapCamera?
+    /// Edge zoom: the camera when the gesture started and where the finger was.
+    @State private var edgeZoomStart: MapCamera?
+    @State private var edgeZoomOriginY: CGFloat = 0
+    @State private var edgeZoomDelta: CGFloat = 0
+    @State private var edgeZoomSide: HorizontalEdge?
     private static let globeAltitude: Double = 1_200_000
     /// Your own photo is drawn on your avatar while you are this close to it.
     private static let ownPinMergeDistance: Double = 150
@@ -29,6 +36,8 @@ struct MainMapView: View {
 
         ZStack {
             mapLayer
+
+            edgeZoomStrips
 
             if isGlobeMode {
                 OrbitingObjectsView()
@@ -335,6 +344,77 @@ struct MainMapView: View {
 
     // MARK: - Map
 
+    // MARK: - Edge zoom
+
+    /// One-thumb zoom: start at the left or right edge, slide a little toward the center,
+    /// then move up to zoom in or down to zoom out.
+    private var edgeZoomStrips: some View {
+        HStack(spacing: 0) {
+            edgeZoomStrip(.leading)
+            Spacer(minLength: 0)
+            edgeZoomStrip(.trailing)
+        }
+        .padding(.top, 150)
+        .padding(.bottom, 170)
+        .ignoresSafeArea(edges: .horizontal)
+    }
+
+    private func edgeZoomStrip(_ side: HorizontalEdge) -> some View {
+        Color.clear
+            .frame(width: 26)
+            .contentShape(Rectangle())
+            .overlay(alignment: side == .leading ? .leading : .trailing) {
+                if edgeZoomSide == side {
+                    edgeZoomIndicator
+                        .offset(x: side == .leading ? 30 : -30)
+                        .position(x: side == .leading ? 13 : 13, y: edgeZoomOriginY + edgeZoomDelta)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 4, coordinateSpace: .local)
+                    .onChanged { value in
+                        if edgeZoomStart == nil {
+                            let inward = side == .leading ? value.translation.width : -value.translation.width
+                            // Slide toward the center first; a vertical-only drag does nothing.
+                            guard inward >= 12, let camera = lastCamera else { return }
+                            edgeZoomStart = camera
+                            edgeZoomOriginY = value.location.y
+                            edgeZoomDelta = 0
+                            withAnimation(Theme.spring) { edgeZoomSide = side }
+                            HapticManager.shared.selection()
+                        }
+                        guard let start = edgeZoomStart else { return }
+                        let delta = value.location.y - edgeZoomOriginY
+                        edgeZoomDelta = delta
+                        // Up (negative delta) zooms in: every 110 pt doubles the zoom.
+                        let distance = min(max(start.distance * pow(2, Double(delta) / 110), 120), 30_000_000)
+                        cameraPosition = .camera(MapCamera(
+                            centerCoordinate: start.centerCoordinate,
+                            distance: distance,
+                            heading: start.heading,
+                            pitch: start.pitch
+                        ))
+                    }
+                    .onEnded { _ in
+                        if edgeZoomStart != nil {
+                            HapticManager.shared.selection()
+                        }
+                        edgeZoomStart = nil
+                        withAnimation(Theme.spring) { edgeZoomSide = nil }
+                    }
+            )
+    }
+
+    private var edgeZoomIndicator: some View {
+        Image(systemName: edgeZoomDelta <= 0 ? "plus.magnifyingglass" : "minus.magnifyingglass")
+            .font(.system(size: 17, weight: .bold))
+            .foregroundStyle(Theme.electricViolet)
+            .frame(width: 44, height: 44)
+            .glassCircle()
+            .allowsHitTesting(false)
+    }
+
     private var mapLayer: some View {
         let skidSegments = SkidMarks.segments(trail: appState.trail, current: currentSpeed == nil ? nil : appState.userLocation)
         let layout = mapLayout
@@ -486,6 +566,7 @@ struct MainMapView: View {
         .mapStyle(mapStyle)
         .mapControls {}
         .onMapCameraChange(frequency: .continuous) { context in
+            lastCamera = context.camera
             mapHeading = context.camera.heading
             if mapHeight > 0 {
                 metersPerPoint = context.region.span.latitudeDelta * 111_320 / Double(mapHeight)
@@ -952,7 +1033,7 @@ struct MainMapView: View {
         if isGlobeMode {
             .hybrid(elevation: .realistic, pointsOfInterest: .excludingAll, showsTraffic: false)
         } else {
-            .standard(elevation: .realistic, emphasis: .muted, pointsOfInterest: .excludingAll, showsTraffic: false)
+            .standard(elevation: .realistic, emphasis: .automatic, pointsOfInterest: .excludingAll, showsTraffic: false)
         }
     }
 

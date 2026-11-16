@@ -1104,19 +1104,31 @@ final class AppState {
 
     /// Saves the profile; uploads `newAvatar` first when provided, or clears the photo when
     /// `removeAvatar` is set.
-    func saveProfile(_ draft: UserProfile, newAvatar: Data?, removeAvatar: Bool) async throws {
+    func saveProfile(_ draft: UserProfile, newAvatar: Data?, removeAvatar: Bool, newLive: LiveAvatarDraft? = nil) async throws {
         var profile = draft
         let previousPath = currentUser.avatarPath
+        let previousLive = [currentUser.avatarLivePhotoPath, currentUser.avatarLiveVideoPath].compactMap { $0 }
         if let newAvatar {
             profile.avatarPath = try await dataService.uploadAvatar(newAvatar)
+            profile.avatarLivePhotoPath = nil
+            profile.avatarLiveVideoPath = nil
+            if let newLive, let paths = try? await dataService.uploadLiveAvatar(newLive) {
+                profile.avatarLivePhotoPath = paths.photo
+                profile.avatarLiveVideoPath = paths.video
+            }
         } else if removeAvatar {
             profile.avatarPath = nil
+            profile.avatarLivePhotoPath = nil
+            profile.avatarLiveVideoPath = nil
         }
         profile.isSetup = true
         let saved = try await dataService.updateProfile(ProfileUpdate(profile: profile))
         applyAccent(saved.avatarColorHex)
         if let previousPath, previousPath != saved.avatarPath {
             Task { await dataService.deleteAvatar(path: previousPath) }
+        }
+        for path in previousLive where path != saved.avatarLivePhotoPath && path != saved.avatarLiveVideoPath {
+            Task { await dataService.deleteAvatar(path: path) }
         }
         withAnimation(Theme.spring) {
             currentUser = saved

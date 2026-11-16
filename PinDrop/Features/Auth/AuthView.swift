@@ -401,7 +401,7 @@ struct NewPasswordView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
     }
 
     private func save() {

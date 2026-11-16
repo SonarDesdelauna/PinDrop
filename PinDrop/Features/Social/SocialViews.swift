@@ -19,7 +19,7 @@ struct NotificationsView: View {
                         ForEach(appState.notifications) { item in
                             row(item)
                                 .listRowBackground(Color.clear)
-                                .listRowSeparatorTint(Color.white.opacity(0.06))
+                                .listRowSeparatorTint(Theme.ink.opacity(0.06))
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                     Button(role: .destructive) {
                                         Task { await appState.deleteNotification(item) }
@@ -52,7 +52,7 @@ struct NotificationsView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
         .task {
             await appState.reloadNotifications()
             try? await Task.sleep(for: .seconds(1.2))
@@ -260,7 +260,7 @@ struct ProfileSheet: View {
                     }
                 }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
     }
 }
 
@@ -324,7 +324,7 @@ struct ProfileView: View {
 
     private var header: some View {
         VStack(spacing: 10) {
-            AvatarBadge(user: shown, size: 96)
+            LiveAvatarView(user: shown, size: 96)
                 .padding(4)
                 .overlay {
                     Circle().strokeBorder(Theme.accentGradient, lineWidth: 3)
@@ -465,7 +465,7 @@ struct ProfileView: View {
                         placeRow(place)
                         if place.id != places.last?.id {
                             Divider()
-                                .overlay(Color.white.opacity(0.06))
+                                .overlay(Theme.ink.opacity(0.06))
                                 .padding(.leading, 66)
                         }
                     }
@@ -488,7 +488,7 @@ struct ProfileView: View {
                     Text(verbatim: place.emoji)
                         .font(.system(size: 22))
                         .frame(width: 42, height: 42)
-                        .background(Circle().fill(Color.white.opacity(0.06)))
+                        .background(Circle().fill(Theme.ink.opacity(0.06)))
                     VStack(alignment: .leading, spacing: 2) {
                         Text(verbatim: place.name)
                             .font(Theme.text(.subheadline, weight: .semibold))
@@ -702,6 +702,6 @@ struct PublicPlaceSheet: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
     }
 }

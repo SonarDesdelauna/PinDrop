@@ -84,6 +84,8 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UIUserInterfaceStyle</key>
-	<string>Dark</string>
+	<string>Light</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>PinDrop reads the Live Photo you choose so it can play on your profile.</string>
 </dict>
 </plist>

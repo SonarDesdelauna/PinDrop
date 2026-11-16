@@ -111,7 +111,7 @@ struct ExpiryRing: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(Color.white.opacity(0.14), lineWidth: lineWidth)
+                .stroke(Theme.ink.opacity(0.14), lineWidth: lineWidth)
             Circle()
                 .trim(from: 0, to: max(0.001, min(1, progress)))
                 .stroke(

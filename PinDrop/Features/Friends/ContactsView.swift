@@ -250,7 +250,7 @@ struct ContactsView: View {
                         row(contact)
                         if contact.id != items.last?.id {
                             Divider()
-                                .overlay(Color.white.opacity(0.06))
+                                .overlay(Theme.ink.opacity(0.06))
                                 .padding(.leading, 66)
                         }
                     }
@@ -270,7 +270,7 @@ struct ContactsView: View {
                     .font(.system(size: 15, weight: .bold, design: .rounded))
                     .foregroundStyle(Theme.textPrimary)
                     .frame(width: 42, height: 42)
-                    .background(Circle().fill(Color.white.opacity(0.08)))
+                    .background(Circle().fill(Theme.ink.opacity(0.08)))
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: contact.name)

@@ -266,6 +266,23 @@ async function enter() {
 
 // ───────────── Map ─────────────
 
+/// Light map, always: OpenFreeMap Positron with a slightly warmer, more colorful touch.
+function brightenStyle() {
+  for (const layer of map.getStyle().layers) {
+    const id = layer.id;
+    try {
+      if (layer.type === "background") map.setPaintProperty(id, "background-color", "#f4f4f8");
+      else if (layer.type === "fill" && /water/.test(id)) map.setPaintProperty(id, "fill-color", "#cfe3fb");
+      else if (layer.type === "fill" && /park|wood|grass|forest|landcover|green|garden|cemetery/.test(id)) map.setPaintProperty(id, "fill-color", "#dcf2e3");
+      else if (layer.type === "line" && /water|river|stream|canal/.test(id)) map.setPaintProperty(id, "line-color", "#b9d6f7");
+      else if (layer.type === "symbol") {
+        map.setPaintProperty(id, "text-color", /water|ocean|sea|lake/.test(id) ? "#4f7cc4" : "#4a4a5e");
+        map.setPaintProperty(id, "text-halo-color", "#ffffff");
+      }
+    } catch (_) {}
+  }
+}
+
 function darkenStyle() {
   for (const layer of map.getStyle().layers) {
     const id = layer.id;
@@ -314,10 +331,10 @@ function addOverlayLayers() {
         "source-layer": "building",
         minzoom: 15,
         paint: {
-          "fill-extrusion-color": "#22244a",
+          "fill-extrusion-color": "#e4e4ee",
           "fill-extrusion-height": ["coalesce", ["get", "render_height"], 8],
           "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
-          "fill-extrusion-opacity": 0.8,
+          "fill-extrusion-opacity": 0.9,
         },
       }, firstSymbol);
     } catch (_) {}
@@ -334,7 +351,7 @@ function addOverlayLayers() {
   map.addLayer({
     id: "pd-trail", type: "line", source: "pd-trail",
     layout: { "line-cap": "round", "line-join": "round" },
-    paint: { "line-color": "#c084fc", "line-width": 4, "line-dasharray": [2, 1.6] },
+    paint: { "line-color": "#7c3aed", "line-width": 4, "line-dasharray": [2, 1.6] },
   });
 }
 
@@ -350,7 +367,7 @@ function initMap() {
     maxPitch: 60,
   });
   map.on("load", () => {
-    darkenStyle();
+    brightenStyle();
     addOverlayLayers();
     mapReady = true;
     updateTrail();

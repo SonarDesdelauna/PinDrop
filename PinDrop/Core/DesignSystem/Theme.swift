@@ -4,11 +4,31 @@ import SwiftUI
 enum Theme {
     // MARK: - Palette
 
-    /// Primary background (#09090B, Obsidian Black).
-    static let obsidian = Color(hex: 0x09090B)
-    /// Elevated surfaces and cards (#121216), used at `surfaceOpacity` over a material.
-    static let surface = Color(hex: 0x121216)
-    static let surfaceOpacity: Double = 0.75
+    /// Primary background: a soft cool white (the app is always light).
+    /// (Screens forced dark, like the camera, keep the original dark values.)
+    static let obsidian = adaptive(light: 0xF5F5FA, dark: 0x09090B)
+    /// Elevated surfaces and cards (white), used at `surfaceOpacity` over a material.
+    static let surface = adaptive(light: 0xFFFFFF, dark: 0x121216)
+    static let surfaceOpacity: Double = 0.72
+    /// Ink for hairlines and subtle fills: dark on light screens, white on dark ones.
+    static let ink = adaptive(light: 0x18181B, dark: 0xFFFFFF)
+
+    /// A color that follows the color scheme of the screen it is drawn in.
+    static func adaptive(light: UInt32, dark: UInt32) -> Color {
+        func ui(_ hex: UInt32) -> UIColor {
+            UIColor(
+                red: CGFloat((hex >> 16) & 0xFF) / 255,
+                green: CGFloat((hex >> 8) & 0xFF) / 255,
+                blue: CGFloat(hex & 0xFF) / 255,
+                alpha: 1
+            )
+        }
+        let lightColor = ui(light)
+        let darkColor = ui(dark)
+        return Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark ? darkColor : lightColor
+        })
+    }
     /// Primary accent: the user's profile color (default #7C3AED, Electric Violet).
     static var electricViolet: Color {
         AccentStore.palette.primary
@@ -20,10 +40,10 @@ enum Theme {
     /// Secondary accent, success and live state (#10B981, Emerald Pulse).
     static let emerald = Color(hex: 0x10B981)
     static let emeraldLight = Color(hex: 0x34D399)
-    /// Primary text (#FAFAFA).
-    static let textPrimary = Color(hex: 0xFAFAFA)
-    /// Secondary text (#A1A1AA).
-    static let textSecondary = Color(hex: 0xA1A1AA)
+    /// Primary text (#18181B).
+    static let textPrimary = adaptive(light: 0x18181B, dark: 0xFAFAFA)
+    /// Secondary text (#6B6B7B).
+    static let textSecondary = adaptive(light: 0x6B6B7B, dark: 0xA1A1AA)
     static let danger = Color(hex: 0xF43F5E)
     static let warning = Color(hex: 0xF59E0B)
 
@@ -40,7 +60,7 @@ enum Theme {
     /// Glass border: white 0.18 → 0.04, used with a 1pt stroke.
     static var glassBorderGradient: LinearGradient {
         LinearGradient(
-            colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)],
+            colors: [Color.white.opacity(0.95), Color.black.opacity(0.06)],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )

@@ -43,7 +43,7 @@ struct NightRecapSheet: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
         .task {
             await render()
         }

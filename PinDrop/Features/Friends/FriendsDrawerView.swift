@@ -70,7 +70,7 @@ struct FriendsDrawerView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
         .sheet(isPresented: $state.isProfileEditorPresented) {
             EditProfileView(mode: .edit)
         }
@@ -637,7 +637,7 @@ struct FriendsDrawerView: View {
                         friendRow(friend)
                         if index < appState.friends.count - 1 {
                             Divider()
-                                .overlay(Color.white.opacity(0.06))
+                                .overlay(Theme.ink.opacity(0.06))
                                 .padding(.leading, 66)
                         }
                     }
@@ -903,7 +903,7 @@ struct FriendsDrawerView: View {
 
     private var rowDivider: some View {
         Divider()
-            .overlay(Color.white.opacity(0.06))
+            .overlay(Theme.ink.opacity(0.06))
             .padding(.leading, 60)
     }
 

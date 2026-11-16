@@ -44,7 +44,7 @@ struct CrossPathBannerView: View {
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(Theme.textSecondary)
                     .frame(width: 28, height: 28)
-                    .background(Circle().fill(Color.white.opacity(0.08)))
+                    .background(Circle().fill(Theme.ink.opacity(0.08)))
             }
             .buttonStyle(PressableButtonStyle())
             .accessibilityLabel(Text("common.close"))

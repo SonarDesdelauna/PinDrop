@@ -24,7 +24,7 @@ struct PinDropApp: App {
                 .environment(appState)
                 .environment(locationService)
                 .environment(cameraService)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(.light)
                 .tint(Theme.neonPurple)
                 .onOpenURL { url in
                     if AuthService.isAuthCallback(url) {

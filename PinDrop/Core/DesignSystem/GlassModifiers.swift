@@ -30,14 +30,13 @@ struct GlassBackground<S: InsettableShape>: ViewModifier {
                 shape
                     .fill(.ultraThinMaterial)
                     .overlay { shape.fill(tint.opacity(tintOpacity)) }
-                    .environment(\.colorScheme, .dark)
             }
             .overlay {
                 shape
                     .strokeBorder(Theme.glassBorderGradient, lineWidth: 1)
                     .allowsHitTesting(false)
             }
-            .shadow(color: Color.black.opacity(0.35), radius: shadowRadius, x: 0, y: 10)
+            .shadow(color: Color.black.opacity(0.12), radius: shadowRadius, x: 0, y: 8)
             .background {
                 if let glassTint {
                     shape.fill(glassTint.opacity(0.55))

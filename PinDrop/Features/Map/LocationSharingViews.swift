@@ -36,7 +36,7 @@ struct FriendGroupAnnotationView: View {
             .padding(users.count > 1 ? 3 : 0)
             .background {
                 if users.count > 1 {
-                    Capsule().fill(Color.black.opacity(0.35))
+                    Capsule().fill(Color.white.opacity(0.75))
                 }
             }
             .shadow(color: (isAnyoneOnline ? Theme.emerald : Color.black).opacity(0.45), radius: 6)
@@ -202,7 +202,7 @@ struct LocationRemindersView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(.light)
     }
 }
 

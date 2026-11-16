@@ -164,7 +164,7 @@ struct AppLogoView: View {
             .clipShape(Circle())
             .overlay {
                 Circle()
-                    .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
+                    .strokeBorder(Theme.ink.opacity(0.18), lineWidth: 1)
             }
             .accessibilityHidden(true)
     }

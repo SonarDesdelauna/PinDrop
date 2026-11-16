@@ -13,6 +13,9 @@ struct UserProfile: Identifiable, Codable, Hashable, Sendable {
     var isSetup: Bool
     /// How many times other people opened this profile (one per person per day).
     var viewCount: Int
+    /// Live Photo profile picture (iPhone): original still and paired video.
+    var avatarLivePhotoPath: String?
+    var avatarLiveVideoPath: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -25,6 +28,8 @@ struct UserProfile: Identifiable, Codable, Hashable, Sendable {
         case inviteCode = "invite_code"
         case isSetup = "is_setup"
         case viewCount = "view_count"
+        case avatarLivePhotoPath = "avatar_live_photo"
+        case avatarLiveVideoPath = "avatar_live_video"
     }
 
     init(
@@ -37,7 +42,9 @@ struct UserProfile: Identifiable, Codable, Hashable, Sendable {
         avatarPath: String?,
         inviteCode: String,
         isSetup: Bool,
-        viewCount: Int = 0
+        viewCount: Int = 0,
+        avatarLivePhotoPath: String? = nil,
+        avatarLiveVideoPath: String? = nil
     ) {
         self.id = id
         self.username = username
@@ -49,6 +56,8 @@ struct UserProfile: Identifiable, Codable, Hashable, Sendable {
         self.inviteCode = inviteCode
         self.isSetup = isSetup
         self.viewCount = viewCount
+        self.avatarLivePhotoPath = avatarLivePhotoPath
+        self.avatarLiveVideoPath = avatarLiveVideoPath
     }
 
     init(from decoder: any Decoder) throws {
@@ -63,6 +72,8 @@ struct UserProfile: Identifiable, Codable, Hashable, Sendable {
         inviteCode = try container.decodeIfPresent(String.self, forKey: .inviteCode) ?? ""
         isSetup = try container.decodeIfPresent(Bool.self, forKey: .isSetup) ?? true
         viewCount = try container.decodeIfPresent(Int.self, forKey: .viewCount) ?? 0
+        avatarLivePhotoPath = try container.decodeIfPresent(String.self, forKey: .avatarLivePhotoPath)
+        avatarLiveVideoPath = try container.decodeIfPresent(String.self, forKey: .avatarLiveVideoPath)
     }
 
     /// `@username`
@@ -131,6 +142,8 @@ struct ProfileUpdate: Encodable, Sendable {
     var statusEmoji: String
     var avatarColorHex: String
     var avatarPath: String?
+    var avatarLivePhotoPath: String?
+    var avatarLiveVideoPath: String?
     var isSetup: Bool
 
     init(profile: UserProfile) {
@@ -140,6 +153,8 @@ struct ProfileUpdate: Encodable, Sendable {
         statusEmoji = profile.statusEmoji
         avatarColorHex = profile.avatarColorHex
         avatarPath = profile.avatarPath
+        avatarLivePhotoPath = profile.avatarLivePhotoPath
+        avatarLiveVideoPath = profile.avatarLiveVideoPath
         isSetup = profile.isSetup
     }
 
@@ -150,6 +165,8 @@ struct ProfileUpdate: Encodable, Sendable {
         case statusEmoji = "status_emoji"
         case avatarColorHex = "avatar_color"
         case avatarPath = "avatar_path"
+        case avatarLivePhotoPath = "avatar_live_photo"
+        case avatarLiveVideoPath = "avatar_live_video"
         case isSetup = "is_setup"
     }
 
@@ -165,6 +182,13 @@ struct ProfileUpdate: Encodable, Sendable {
             try container.encode(avatarPath, forKey: .avatarPath)
         } else {
             try container.encodeNil(forKey: .avatarPath)
+        }
+        if let avatarLivePhotoPath, let avatarLiveVideoPath {
+            try container.encode(avatarLivePhotoPath, forKey: .avatarLivePhotoPath)
+            try container.encode(avatarLiveVideoPath, forKey: .avatarLiveVideoPath)
+        } else {
+            try container.encodeNil(forKey: .avatarLivePhotoPath)
+            try container.encodeNil(forKey: .avatarLiveVideoPath)
         }
         try container.encode(isSetup, forKey: .isSetup)
     }
