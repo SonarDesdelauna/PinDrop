@@ -168,11 +168,6 @@ fn push_text(row: &Value) -> Option<(String, String)> {
         "friend_accepted" => ("Ora siete amici 🎉".to_string(), format!("{name} ha accettato la tua richiesta")),
         "ping" => (name, "👋 Ti ha mandato un ping".to_string()),
         "place_reached" => (format!("Sei a {detail}"), format!("Un luogo pubblico di {name}: aggiungilo ai tuoi luoghi")),
-        "mayor_won" => (
-            format!("👑 Sei il nuovo Sindaco di {detail}"),
-            if s("actor_name").is_empty() { "Nessuno ci è stato più volte di te".to_string() } else { format!("Hai superato {name}: la corona è tua") },
-        ),
-        "mayor_lost" => (format!("👑 {name} ti ha rubato {detail}"), "Torna a riprenderti la corona".to_string()),
         "best_friend" => ("Nuovo migliore amico 💜".to_string(), format!("Tu e {name} avete passato 2 ore insieme")),
         _ => return None,
     })

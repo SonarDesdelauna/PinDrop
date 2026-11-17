@@ -43,13 +43,6 @@ struct PublicPlace: Identifiable, Decodable, Hashable, Sendable {
     let ownerUsername: String
     let ownerAvatarColor: String
     let ownerAvatarPath: String?
-    /// The Mayor: whoever has been there the most times (at least 2 visits).
-    let mayorID: UUID?
-    let mayorDisplayName: String?
-    let mayorUsername: String?
-    let mayorAvatarColor: String?
-    let mayorAvatarPath: String?
-    let mayorVisits: Int?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -63,27 +56,6 @@ struct PublicPlace: Identifiable, Decodable, Hashable, Sendable {
         case ownerUsername = "owner_username"
         case ownerAvatarColor = "owner_avatar_color"
         case ownerAvatarPath = "owner_avatar_path"
-        case mayorID = "mayor_id"
-        case mayorDisplayName = "mayor_display_name"
-        case mayorUsername = "mayor_username"
-        case mayorAvatarColor = "mayor_avatar_color"
-        case mayorAvatarPath = "mayor_avatar_path"
-        case mayorVisits = "mayor_visits"
-    }
-
-    var mayor: UserProfile? {
-        guard let mayorID else { return nil }
-        return UserProfile(
-            id: mayorID,
-            username: mayorUsername ?? "",
-            displayName: mayorDisplayName ?? "",
-            bio: "",
-            statusEmoji: "",
-            avatarColorHex: mayorAvatarColor ?? "#7C4DFF",
-            avatarPath: mayorAvatarPath,
-            inviteCode: "",
-            isSetup: true
-        )
     }
 
     var location: GeoPoint {
@@ -92,23 +64,6 @@ struct PublicPlace: Identifiable, Decodable, Hashable, Sendable {
 
     var coordinate: CLLocationCoordinate2D {
         location.coordinate
-    }
-}
-
-/// A public place someone is the Mayor of (`mayorships_of`).
-struct Mayorship: Identifiable, Decodable, Hashable, Sendable {
-    let placeID: UUID
-    let name: String
-    let emoji: String
-    let visits: Int
-
-    var id: UUID { placeID }
-
-    enum CodingKeys: String, CodingKey {
-        case placeID = "place_id"
-        case name
-        case emoji
-        case visits
     }
 }
 

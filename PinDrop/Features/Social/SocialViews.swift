@@ -272,7 +272,6 @@ struct ProfileView: View {
     @Environment(AppState.self) private var appState
     @State private var profile: UserProfile?
     @State private var places: [PlaceSummary] = []
-    @State private var mayorships: [Mayorship] = []
     @State private var isLoading = true
     @State private var isWorking = false
     @State private var addedPlaceIDs: Set<UUID> = []
@@ -291,9 +290,6 @@ struct ProfileView: View {
                 if let music = appState.nowPlaying(for: user.id) {
                     NowPlayingCard(nowPlaying: music)
                 }
-                if !mayorships.isEmpty {
-                    mayorshipsCard
-                }
                 if !isMe {
                     friendshipCard
                 }
@@ -311,11 +307,6 @@ struct ProfileView: View {
                 profile = details.profile
                 places = details.places
                 isLoading = false
-            }
-            if let crowns = try? await appState.dataService.fetchMayorships(of: user.id) {
-                withAnimation(Theme.spring) {
-                    mayorships = crowns
-                }
             }
         }
         .confirmationDialog(
@@ -377,42 +368,6 @@ struct ProfileView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(20)
-        .glassCard()
-    }
-
-    /// "Mayor of": the public places where this person has been the most.
-    private var mayorshipsCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                MayorCrown(size: 20)
-                Text("mayor.of \(mayorships.count)")
-                    .font(Theme.text(.headline, weight: .bold))
-                    .foregroundStyle(Theme.textPrimary)
-            }
-            ScrollView(.horizontal) {
-                HStack(spacing: 8) {
-                    ForEach(mayorships) { crown in
-                        HStack(spacing: 6) {
-                            Text(verbatim: crown.emoji)
-                            Text(verbatim: crown.name)
-                                .font(Theme.text(.subheadline, weight: .semibold))
-                                .foregroundStyle(Theme.textPrimary)
-                                .lineLimit(1)
-                            Text(verbatim: "×\(crown.visits)")
-                                .font(Theme.roundedFixed(11, weight: .heavy))
-                                .foregroundStyle(Theme.mayorGold)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Capsule().fill(Theme.mayorGold.opacity(0.14)))
-                        .overlay(Capsule().strokeBorder(Theme.mayorGold.opacity(0.45), lineWidth: 1))
-                    }
-                }
-            }
-            .scrollIndicators(.hidden)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
         .glassCard()
     }
 
@@ -641,9 +596,6 @@ struct PlaceVisitorsSection: View {
     }
 
     let placeID: UUID
-    /// The Mayor, when the place has one.
-    var mayor: UserProfile?
-    var mayorVisits: Int?
 
     @Environment(AppState.self) private var appState
     @State private var visitors: [PlaceVisitor] = []
@@ -661,96 +613,7 @@ struct PlaceVisitorsSection: View {
         shown.reduce(0) { $0 + $1.visitCount }
     }
 
-    private var myVisits: Int {
-        visitors.first { $0.isMe }?.visitCount ?? 0
-    }
-
-    private var mayorCount: Int {
-        max(mayorVisits ?? 0, visitors.first { $0.userID == mayor?.id }?.visitCount ?? 0)
-    }
-
     var body: some View {
-        VStack(spacing: 16) {
-            mayorCard
-            visitorsCard
-        }
-    }
-
-    // MARK: Mayor
-
-    private var mayorCard: some View {
-        VStack(spacing: 10) {
-            if let mayor {
-                HStack(spacing: 12) {
-                    AvatarBadge(user: mayor, size: 52)
-                        .overlay {
-                            Circle().strokeBorder(Theme.mayorGold, lineWidth: 2.5)
-                        }
-                        .overlay(alignment: .top) {
-                            MayorCrown(size: 22)
-                                .offset(y: -16)
-                        }
-                        .padding(.top, 8)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("mayor.title")
-                            .font(Theme.text(.caption, weight: .heavy))
-                            .foregroundStyle(Theme.mayorGold)
-                            .textCase(.uppercase)
-                        Group {
-                            if mayor.id == appState.currentUser.id {
-                                Text("visitors.you")
-                            } else {
-                                Text(verbatim: mayor.displayName)
-                            }
-                        }
-                        .font(Theme.rounded(.title3, weight: .heavy))
-                        .foregroundStyle(Theme.textPrimary)
-                        .lineLimit(1)
-                        Text("places.visits \(mayorCount)")
-                            .font(Theme.text(.caption, weight: .semibold))
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-                    Spacer(minLength: 0)
-                }
-                Text(mayorHint(for: mayor))
-                    .font(Theme.text(.subheadline, weight: .semibold))
-                    .foregroundStyle(Theme.textPrimary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
-                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.mayorGold.opacity(0.14)))
-            } else {
-                HStack(spacing: 12) {
-                    MayorCrown(size: 30)
-                        .grayscale(0.6)
-                        .opacity(0.7)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("mayor.none.title")
-                            .font(Theme.text(.headline, weight: .bold))
-                            .foregroundStyle(Theme.textPrimary)
-                        Text("mayor.none.body")
-                            .font(Theme.text(.subheadline))
-                            .foregroundStyle(Theme.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer(minLength: 0)
-                }
-            }
-        }
-        .padding(16)
-        .glassCard()
-    }
-
-    private func mayorHint(for mayor: UserProfile) -> LocalizedStringKey {
-        if mayor.id == appState.currentUser.id {
-            return "mayor.you.hint"
-        }
-        let missing = max(1, mayorCount + 1 - myVisits)
-        return "mayor.steal.hint \(missing)"
-    }
-
-    // MARK: Leaderboard
-
-    private var visitorsCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 Label("visitors.title", systemImage: "trophy.fill")
@@ -811,7 +674,7 @@ struct PlaceVisitorsSection: View {
     @ViewBuilder
     private func row(_ visitor: PlaceVisitor, rank: Int) -> some View {
         let content = HStack(spacing: 12) {
-            rankBadge(rank, isMayor: visitor.userID == mayor?.id)
+            rankBadge(rank)
             AvatarBadge(user: visitor.profile, size: 36)
             VStack(alignment: .leading, spacing: 1) {
                 Group {
@@ -855,19 +718,7 @@ struct PlaceVisitorsSection: View {
     }
 
     @ViewBuilder
-    private func rankBadge(_ rank: Int, isMayor: Bool = false) -> some View {
-        Group {
-            if isMayor {
-                MayorCrown(size: 22)
-            } else {
-                medal(rank)
-            }
-        }
-        .frame(width: 28)
-    }
-
-    @ViewBuilder
-    private func medal(_ rank: Int) -> some View {
+    private func rankBadge(_ rank: Int) -> some View {
         Group {
             switch rank {
             case 1: Text(verbatim: "🥇").font(.system(size: 22))
@@ -965,7 +816,7 @@ struct PublicPlaceSheet: View {
                     }
                     .buttonStyle(PressableButtonStyle(pressedScale: 0.98))
 
-                    PlaceVisitorsSection(placeID: place.id, mayor: place.mayor, mayorVisits: place.mayorVisits)
+                    PlaceVisitorsSection(placeID: place.id)
 
                     if alreadySaved {
                         Label("notifications.placeSaved", systemImage: "checkmark.circle.fill")

@@ -40,8 +40,6 @@ enum Theme {
     /// Secondary accent, success and live state (#10B981, Emerald Pulse).
     static let emerald = Color(hex: 0x10B981)
     static let emeraldLight = Color(hex: 0x34D399)
-    /// The Mayor's crown gold.
-    static let mayorGold = Color(hex: 0xF5B301)
     /// Primary text (#18181B).
     static let textPrimary = adaptive(light: 0x18181B, dark: 0xFAFAFA)
     /// Secondary text (#6B6B7B).
