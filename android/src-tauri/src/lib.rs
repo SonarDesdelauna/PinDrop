@@ -528,6 +528,7 @@ pub fn run() {
         .manage(AppData { http, session: Mutex::new(None), file: Mutex::new(None) })
         .setup(|app| {
             always::remember(app.handle());
+            always::start_push(app.handle());
             if let Ok(dir) = app.path().app_data_dir() {
                 let _ = fs::create_dir_all(&dir);
                 let path = dir.join("session.json");
@@ -600,7 +601,8 @@ pub fn run() {
             always::always_location_status,
             always::request_always_location,
             always::open_app_settings,
-            always::set_always_location
+            always::set_always_location,
+            always::enable_notifications
         ])
         .run(tauri::generate_context!())
         .expect("error while running PinDrop");

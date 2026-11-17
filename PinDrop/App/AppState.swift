@@ -190,6 +190,8 @@ final class AppState {
     let locationService: LocationService
     /// Chats and stories.
     let social: SocialStore
+    /// System notifications for what friends do (messages, pins, capsules, stories...).
+    @ObservationIgnored let push: PushNotifier
 
     @ObservationIgnored private var sessionUserID: UUID?
     @ObservationIgnored private var refreshQueued = false
@@ -210,14 +212,27 @@ final class AppState {
         self.dataService = dataService
         self.locationService = locationService
         self.social = SocialStore(dataService: dataService)
+        let push = PushNotifier(dataService: dataService)
+        self.push = push
         // Background fixes ("Always" permission) are shared with friends even when the app
         // was relaunched by iOS and no screen is showing.
-        locationService.backgroundFixHandler = { [dataService, locationService] point in
-            // iOS gives the app ~10 s of runtime after a location wake-up: enough to upload.
+        locationService.backgroundFixHandler = { [dataService, locationService, push] point in
+            // iOS gives the app ~10 s of runtime after a location wake-up: enough to upload
+            // and to look for new notifications.
             let permission = locationService.permissionName
             Task {
                 try? await dataService.reportLocation(point, permission: permission)
             }
+            Task {
+                await push.check()
+            }
+        }
+        push.onOpen = { [weak self] route in
+            self?.openPushRoute(route)
+        }
+        push.shouldPresentInForeground = { [weak self] event in
+            // No banner for chat messages while the chats are on screen.
+            !(event.kind == "message" && self?.social.isChatListPresented == true)
         }
     }
 
@@ -894,6 +909,47 @@ final class AppState {
         }
         await refresh()
         startHousekeeping()
+        push.start()
+        if let route = pendingPushRoute {
+            pendingPushRoute = nil
+            openPushRoute(route)
+        }
+    }
+
+    // MARK: - Device notifications
+
+    @ObservationIgnored private var pendingPushRoute: PushRoute?
+
+    /// Opens what a tapped notification is about (waits for the session when needed).
+    func openPushRoute(_ route: PushRoute) {
+        guard sessionPhase == .ready else {
+            pendingPushRoute = route
+            return
+        }
+        switch route {
+        case .chat(let threadID):
+            Task {
+                if let userID = sessionUserID {
+                    await social.refresh(userID: userID)
+                }
+                social.isChatListPresented = true
+                social.openThreadID = threadID
+            }
+        case .story(let authorID):
+            Task {
+                if let userID = sessionUserID {
+                    await social.refresh(userID: userID)
+                }
+                social.storyViewerStart = authorID
+            }
+        case .pin(let pinID):
+            Task {
+                await refresh()
+                openPin(pinID)
+            }
+        case .notifications:
+            isNotificationsPresented = true
+        }
     }
 
     func retryStart() async {
@@ -905,6 +961,8 @@ final class AppState {
     /// Clears every piece of user data (sign-out or account switch).
     func reset() {
         stopLiveTracking()
+        push.stop()
+        pendingPushRoute = nil
         places = []
         presence = nil
         lastPresenceUpload = nil

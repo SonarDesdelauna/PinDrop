@@ -37,14 +37,24 @@ struct PinDropApp: App {
                     authService.start()
                 }
         }
+        // iOS wakes the app now and then to look for new notifications.
+        .backgroundTask(.appRefresh(PushNotifier.refreshTaskID)) { [push = appState.push] in
+            await push.check()
+            await push.scheduleBackgroundRefresh()
+        }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:
                 appState.resetLocationBanners()
                 Task { await appState.refresh() }
+                if appState.sessionPhase == .ready {
+                    appState.push.startPolling()
+                }
             case .background:
                 appState.pruneExpiredPins()
                 appState.goOffline()
+                appState.push.stopPolling()
+                appState.push.scheduleBackgroundRefresh()
             default:
                 break
             }

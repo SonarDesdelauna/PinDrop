@@ -77,6 +77,52 @@ public class LocationService extends Service implements LocationListener {
         ctx.stopService(new Intent(ctx, LocationService.class));
     }
 
+    // ───── Notifications for what friends do (called from Rust) ─────
+
+    private static final String SOCIAL_CHANNEL = "pindrop_social";
+
+    /** Asks for the notification permission (Android 13+). */
+    public static void requestNotifications(Context ctx) {
+        if (Build.VERSION.SDK_INT >= 33 && ctx instanceof Activity
+                && ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            try {
+                ((Activity) ctx).requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 7302);
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
+    /** Shows a message, pin, capsule or story notification. Tapping it opens the app. */
+    public static void notify(Context ctx, int id, String title, String body) {
+        try {
+            if (Build.VERSION.SDK_INT >= 33
+                    && ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                return;
+            }
+            NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (Build.VERSION.SDK_INT >= 26) {
+                NotificationChannel channel = new NotificationChannel(SOCIAL_CHANNEL, "Amici e messaggi", NotificationManager.IMPORTANCE_HIGH);
+                channel.setDescription("Messaggi, pin, capsule e storie dei tuoi amici");
+                nm.createNotificationChannel(channel);
+            }
+            Intent open = ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName());
+            if (open != null) open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            PendingIntent tap = open == null ? null : PendingIntent.getActivity(ctx, id, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            Notification.Builder builder = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(ctx, SOCIAL_CHANNEL) : new Notification.Builder(ctx);
+            builder.setContentTitle(title)
+                    .setContentText(body)
+                    .setStyle(new Notification.BigTextStyle().bigText(body))
+                    .setSmallIcon(ctx.getApplicationInfo().icon)
+                    .setAutoCancel(true)
+                    .setWhen(System.currentTimeMillis())
+                    .setShowWhen(true);
+            if (Build.VERSION.SDK_INT < 26) builder.setPriority(Notification.PRIORITY_HIGH).setDefaults(Notification.DEFAULT_ALL);
+            if (tap != null) builder.setContentIntent(tap);
+            nm.notify(id, builder.build());
+        } catch (Throwable ignored) {
+        }
+    }
+
     // ───── Service ─────
 
     @Override

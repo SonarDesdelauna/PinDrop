@@ -360,6 +360,27 @@ final class SupabaseDataService: Sendable {
             .value
     }
 
+    /// New device notification events after `cursor`. With a nil cursor the server returns
+    /// only a "cursor" row with the latest event id.
+    func fetchPendingPush(after cursor: Int64?) async throws -> [PushEvent] {
+        struct Params: Encodable, Sendable {
+            let after: Int64?
+
+            func encode(to encoder: any Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                if let after { try container.encode(after, forKey: .after) } else { try container.encodeNil(forKey: .after) }
+            }
+
+            enum CodingKeys: String, CodingKey {
+                case after
+            }
+        }
+        return try await client
+            .rpc("pending_push", params: Params(after: cursor))
+            .execute()
+            .value
+    }
+
     /// Everyone who has been at a public place, most visits first.
     func fetchPlaceVisitors(_ placeID: UUID) async throws -> [PlaceVisitor] {
         try await client

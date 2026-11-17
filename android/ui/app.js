@@ -896,6 +896,8 @@ async function startMain() {
   setInterval(updateStatus, 30000);
   startSocial();
   setTimeout(() => syncAlways(true), 4000);
+  // Notifications for messages, pins, capsules and stories of friends (Android 13+ asks once).
+  setTimeout(() => invoke("enable_notifications").catch(() => {}), 1500);
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) { refresh(); updateLocation(false); syncAlways(); }
   });
