@@ -295,6 +295,7 @@ $("setupSubmit").addEventListener("click", async () => {
 });
 
 async function enter() {
+  await showOnboarding();
   try {
     state.me = await invoke("my_profile");
   } catch (e) {
@@ -431,6 +432,7 @@ function initMap() {
   map.on("load", () => {
     brightenStyle();
     addOverlayLayers();
+    setupGlobe();
     mapReady = true;
     updateTrail();
     updateZones();
@@ -544,7 +546,7 @@ function computeLayout() {
   const nearMe = (p, r) => meP && gap(meP, p) < ME_R + r;
   const occupied = meP ? [{ p: meP, r: ME_R }] : [];
   const fits = (p, r) => occupied.every((o) => gap(o.p, p) >= o.r + r);
-  const L = { far: isFarZoom(), companions: [], groups: [], clusters: [], underMe: [], capsules: [], capsulesUnderMe: [], places: [] };
+  const L = { far: isFarZoom(), companions: [], groups: [], clusters: [], underMe: [], capsules: [], capsulesUnderMe: [], places: [], publicPlaces: [] };
   if (L.far) return L;
 
   for (const f of freshLocations()) {
@@ -577,6 +579,10 @@ function computeLayout() {
     if (nearMe(p, 20)) { L.currentPlace = place; continue; }
     if (fits(p, 28)) { L.places.push(place); occupied.push({ p, r: 28 }); }
   }
+  for (const place of visiblePublicPlaces()) {
+    const p = P({ lat: place.latitude, lon: place.longitude });
+    if (!nearMe(p, 18) && fits(p, 24)) { L.publicPlaces.push(place); occupied.push({ p, r: 24 }); }
+  }
   return L;
 }
 
@@ -595,6 +601,7 @@ function layoutKey(L) {
     activeCrossEvents().map((e) => e.id),
     L.places.map((p) => p.id + p.name + p.emoji),
     L.currentPlace?.id,
+    L.publicPlaces.map((p) => p.id),
     visibleRelays().map((r) => r.id + r.status + r.legs.length + r.legs.map((l) => (state.urls["relays" + l.thumb_path] ? 1 : 0)).join("")),
   ]);
 }
@@ -632,6 +639,10 @@ function renderMarkers(force) {
     }
     updateStatus();
     return;
+  }
+
+  for (const place of L.publicPlaces) {
+    addMarker(element(`<div class="m-place public"><div class="emoji">${esc(place.emoji)}</div><div class="tag">${esc(place.name)}</div></div>`, () => openPublicPlace(place)), [place.longitude, place.latitude]);
   }
 
   for (const place of L.places) {
@@ -926,6 +937,7 @@ async function startMain() {
   setInterval(updateStatus, 30000);
   setInterval(updateRelayBanner, 30000);
   startSocial();
+  startExtras();
   setTimeout(() => syncAlways(true), 4000);
   // Notifications for messages, pins, capsules and stories of friends (Android 13+ asks once).
   setTimeout(() => invoke("enable_notifications").catch(() => {}), 1500);
@@ -946,8 +958,10 @@ function openFriendsSheet() {
     <div class="row"><div class="field at grow"><input id="addFriend" type="text" placeholder="username o codice invito" autocapitalize="none"></div><button id="addFriendBtn" class="primary" style="padding:15px">Aggiungi</button></div>
     <p id="friendMsg" class="msg"></p>
     <div id="requestsBox"></div>
-    <h3>I tuoi amici</h3><div id="friendsList"></div>`, (root) => {
+    <h3>I tuoi amici</h3><div id="friendsList"></div>
+    <div id="friendsExtras"></div>`, (root) => {
     renderFriendsList();
+    renderFriendsExtras(root.querySelector("#friendsExtras"));
     root.querySelector("#addFriendBtn").addEventListener("click", addFriend);
   });
 }
@@ -1025,10 +1039,12 @@ function openFriend(friend) {
   const where = loc ? `${state.online.has(friend.id) ? "online ora" : "visto " + ago(loc.updated_at)}${state.myPos ? " · a " + distanceText(distance(state.myPos, loc)) : ""}` : "posizione non condivisa";
   openSheet(`<div class="sheet-head"><div class="author">${avatarHTML(friend)}<div>${esc(friend.display_name)} ${esc(friend.status_emoji || "")}<small>@${esc(friend.username)} · ${esc(where)}</small></div></div><button class="close-x" data-close>${ICON.x}</button></div>
     ${friend.bio ? `<p class="muted" style="margin:0">${esc(friend.bio)}</p>` : ""}
+    <div id="friendExtras"></div>
     ${musicCardHTML(state.music.get(friend.id))}
     ${canSync ? `<button class="primary emerald" data-act="sync">⚡ Sync Shot con ${esc(firstName(friend))}</button>` : `<p class="muted small" style="margin:0">⚡ Il Sync Shot si attiva quando siete a meno di ${SYNC_M} m.</p>`}
     <button class="primary" data-act="chat">💬 Scrivi a ${esc(firstName(friend))}</button>
     <div class="row">${loc ? `<button class="ghost grow" data-act="map">📍 Mostra sulla mappa</button>` : ""}${pin && !isLocked(pin) ? `<button class="ghost grow" data-act="pin">🖼️ La sua foto</button>` : ""}</div>`, (root) => {
+    renderFriendExtras(friend, root.querySelector("#friendExtras"));
     root.querySelector('[data-act="sync"]')?.addEventListener("click", () => startSync(friend));
     root.querySelector('[data-act="chat"]')?.addEventListener("click", () => openDirectChat(friend));
     root.querySelector('[data-act="map"]')?.addEventListener("click", () => { closeSheet(); map.flyTo({ center: [loc.lon, loc.lat], zoom: 17, duration: 900 }); });
@@ -1049,6 +1065,7 @@ function openGroup(group) {
 $("profileBtn").addEventListener("click", () => {
   const me = state.me;
   openSheet(`<div class="sheet-head"><div class="author">${avatarHTML(me)}<div>${esc(me.display_name)}<small>@${esc(me.username)}</small></div></div><button class="close-x" data-close>${ICON.x}</button></div>
+    <div id="profileExtras"></div>
     ${me.invite_code ? `<div class="stat"><span>CODICE INVITO</span><b style="letter-spacing:2px">${esc(me.invite_code)}</b></div>` : ""}
     <p class="muted small" style="margin:0">Gli amici possono aggiungerti con @${esc(me.username)}${me.invite_code ? " o con il codice invito" : ""}.</p>
     <h3>📍 Posizione</h3>
@@ -1059,6 +1076,7 @@ $("profileBtn").addEventListener("click", () => {
     <button class="danger" data-act="logout">Esci da PinDrop</button>`, (root) => {
     renderMusicBox(root.querySelector("#musicBox"));
     renderAlwaysBox(root.querySelector("#alwaysBox"));
+    renderProfileExtras(root.querySelector("#profileExtras"));
     root.querySelector('[data-act="logout"]').addEventListener("click", async () => {
       await invoke("sign_out").catch(() => {});
       location.reload();
@@ -1942,6 +1960,7 @@ function openPins(pins, index = 0) {
     ${pin.caption ? `<p class="caption">${esc(pin.caption)}</p>` : ""}
     ${state.crossPins.has(pin.id) && !mine ? `<p class="muted small" style="margin:0">💫 Sbloccata perché vi siete sfiorati</p>` : ""}
     <div class="reactions">${reactionsHTML()}</div>
+    ${!mine && pin.author ? `<button class="ghost" data-act="omw">🏃 Sto arrivando</button>` : ""}
     ${hub.length >= 2
       ? `<button class="ghost chat-cta" data-act="hub">💬 Apri la chat del gruppo (${hub.length + 1})</button>`
       : !mine ? `<div class="reply-bar"><input id="pinReply" type="text" maxlength="500" placeholder="Rispondi a ${esc(firstName(pin.author))}…"><button class="send" data-act="reply" aria-label="Invia">${ICON.send}</button></div>` : ""}
@@ -1970,6 +1989,7 @@ function openPins(pins, index = 0) {
       } catch (err) { toast(errorText(err)); }
     });
     root.querySelector('[data-act="hub"]')?.addEventListener("click", (e) => openHubChat(hub, pin.place_name, e.currentTarget));
+    root.querySelector('[data-act="omw"]')?.addEventListener("click", () => openOnMyWay(pin));
     const sendPinReply = async () => {
       const input = root.querySelector("#pinReply");
       const text = input.value.trim();

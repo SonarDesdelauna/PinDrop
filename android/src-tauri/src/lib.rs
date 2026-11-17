@@ -14,6 +14,7 @@ use std::{
 use tauri::{Manager, State};
 
 mod always;
+mod extra;
 mod features;
 mod relays;
 mod social;
@@ -607,7 +608,16 @@ pub fn run() {
             always::enable_notifications,
             relays::fetch_relays,
             relays::start_relay,
-            relays::run_relay_leg
+            relays::run_relay_leg,
+            extra::api,
+            extra::upload_avatar,
+            extra::delete_avatar,
+            extra::contacts_status,
+            extra::request_contacts,
+            extra::read_contacts,
+            extra::share_text,
+            extra::send_sms,
+            extra::update_widget
         ])
         .run(tauri::generate_context!())
         .expect("error while running PinDrop");
