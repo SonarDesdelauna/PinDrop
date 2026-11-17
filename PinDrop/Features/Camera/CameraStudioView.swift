@@ -65,6 +65,7 @@ struct CameraStudioView: View {
             }
         }
         .onDisappear {
+            appState.relayRun = nil
             recordTask?.cancel()
             if isRecording {
                 Task { _ = await camera.stopRecording() }

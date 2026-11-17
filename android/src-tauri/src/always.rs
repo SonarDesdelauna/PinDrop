@@ -168,6 +168,11 @@ fn push_text(row: &Value) -> Option<(String, String)> {
         "friend_accepted" => ("Ora siete amici 🎉".to_string(), format!("{name} ha accettato la tua richiesta")),
         "ping" => (name, "👋 Ti ha mandato un ping".to_string()),
         "place_reached" => (format!("Sei a {detail}"), format!("Un luogo pubblico di {name}: aggiungilo ai tuoi luoghi")),
+        "relay_baton" => (format!("🏃 {name} ti ha passato il testimone"), format!("{detail} · hai 24 ore per correre la tua tappa")),
+        "relay_leg" => (format!("{name} ha corso una tappa"), if sub.is_empty() { detail.clone() } else { format!("{detail} · 📍 {sub}") }),
+        "relay_reminder" => ("⏰ Ultime 3 ore per la staffetta".to_string(), format!("{detail}: corri la tua tappa o la catena si spezza")),
+        "relay_broken" => ("💥 Staffetta spezzata".to_string(), format!("{name} ha fatto cadere {detail}")),
+        "relay_finished" => ("🏁 Staffetta arrivata!".to_string(), format!("{name} ha tagliato il traguardo di {detail} dopo {sub} tappe")),
         "best_friend" => ("Nuovo migliore amico 💜".to_string(), format!("Tu e {name} avete passato 2 ore insieme")),
         _ => return None,
     })

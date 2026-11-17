@@ -33,6 +33,7 @@ enum PushRoute: Sendable, Equatable {
     case chat(UUID)
     case story(UUID)
     case pin(UUID)
+    case relay(UUID)
     case notifications
 }
 
@@ -189,6 +190,17 @@ final class PushNotifier: NSObject, UNUserNotificationCenterDelegate {
             return (name, String(localized: "push.ping.body"))
         case "place_reached":
             return (String(localized: "push.placeReached.title \(detail)"), String(localized: "push.placeReached.body \(name)"))
+        case "relay_baton":
+            return (String(localized: "push.relayBaton.title \(name)"), String(localized: "push.relayBaton.body \(detail)"))
+        case "relay_leg":
+            let place = event.sub?.isEmpty == false ? " · 📍 \(event.sub ?? "")" : ""
+            return (String(localized: "push.relayLeg.title \(name)"), detail + place)
+        case "relay_reminder":
+            return (String(localized: "push.relayReminder.title"), String(localized: "push.relayReminder.body \(detail)"))
+        case "relay_broken":
+            return (String(localized: "push.relayBroken.title"), String(localized: "push.relayBroken.body \(name) \(detail)"))
+        case "relay_finished":
+            return (String(localized: "push.relayFinished.title"), String(localized: "push.relayFinished.body \(name) \(detail) \(Int(event.sub ?? "") ?? 0)"))
         case "best_friend":
             return (String(localized: "push.bestFriend.title"), String(localized: "push.bestFriend.body \(name)"))
         default:
@@ -226,6 +238,9 @@ final class PushNotifier: NSObject, UNUserNotificationCenterDelegate {
         case "pin":
             guard let ref else { return }
             route = .pin(ref)
+        case _ where kind.hasPrefix("relay_"):
+            guard let ref else { return }
+            route = .relay(ref)
         default:
             route = .notifications
         }

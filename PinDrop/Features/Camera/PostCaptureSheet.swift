@@ -21,6 +21,7 @@ struct PostCaptureSheet: View {
     enum DropMode: Hashable {
         case live
         case capsule
+        case relay
     }
 
     let shot: CapturedShot
@@ -38,6 +39,11 @@ struct PostCaptureSheet: View {
     @State private var mode: DropMode = .live
     @State private var hint = ""
     @State private var recipient: UserProfile?
+    // Relay (Staffetta)
+    @State private var relayTitle = ""
+    @State private var relayEmoji = Relay.emojiPalette[0]
+    @State private var relayPassTo: UserProfile?
+    @State private var finishesRelay = false
     @FocusState private var isCaptionFocused: Bool
     @FocusState private var isHintFocused: Bool
 
@@ -45,19 +51,40 @@ struct PostCaptureSheet: View {
         mode == .capsule ? GeoCapsule.messageLimit : Self.captionLimit
     }
 
+    /// The relay whose baton you hold, when the camera was opened to run your leg.
+    private var runningRelay: Relay? {
+        appState.relayRun
+    }
+
+    private var canDrop: Bool {
+        guard shot.location != nil, !isPublishing else { return false }
+        guard mode == .relay else { return true }
+        if runningRelay != nil {
+            return relayPassTo != nil || finishesRelay
+        }
+        return relayPassTo != nil && !relayTitle.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
                 header
-                modeSelector
+                if runningRelay == nil {
+                    modeSelector
+                }
                 photo
                 if mode == .capsule {
                     hintField
                     recipientPicker
                 }
+                if mode == .relay {
+                    relaySection
+                }
                 captionField
                 if mode == .capsule {
                     capsuleNote
+                } else if mode == .relay {
+                    relayNote
                 } else {
                     privacyNote
                 }
@@ -81,6 +108,11 @@ struct PostCaptureSheet: View {
         .background(Theme.obsidian.ignoresSafeArea())
         .task {
             await resolvePlace()
+        }
+        .onAppear {
+            if runningRelay != nil {
+                mode = .relay
+            }
         }
     }
 
@@ -126,6 +158,9 @@ struct PostCaptureSheet: View {
                     if mode == .capsule {
                         Image(systemName: "lock.fill")
                         Text("post.capsule.duration")
+                    } else if mode == .relay {
+                        Image(systemName: "figure.run")
+                        Text("relay.duration")
                     } else {
                         Image(systemName: "timer")
                         Text("camera.sixHours")
@@ -167,6 +202,7 @@ struct PostCaptureSheet: View {
         HStack(spacing: 4) {
             modeButton(.live, title: "post.mode.live", icon: "timer")
             modeButton(.capsule, title: "post.mode.capsule", icon: "lock.fill")
+            modeButton(.relay, title: "post.mode.relay", icon: "figure.run")
         }
         .padding(4)
         .glassCapsule()
@@ -196,7 +232,7 @@ struct PostCaptureSheet: View {
                         Capsule()
                             .fill(value == .capsule
                                 ? AnyShapeStyle(LinearGradient(colors: [Color(hex: 0xF59E0B), Color(hex: 0xA855F7)], startPoint: .leading, endPoint: .trailing))
-                                : AnyShapeStyle(Theme.accentGradient))
+                                : value == .relay ? AnyShapeStyle(RelayStyle.gradient) : AnyShapeStyle(Theme.accentGradient))
                     }
                 }
                 .contentShape(Capsule())
@@ -273,6 +309,143 @@ struct PostCaptureSheet: View {
             .glassCard(cornerRadius: Theme.Radius.control)
         }
         .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
+    // MARK: - Relay
+
+    @ViewBuilder
+    private var relaySection: some View {
+        VStack(spacing: 12) {
+            if let relay = runningRelay {
+                HStack(spacing: 12) {
+                    Text(verbatim: relay.emoji)
+                        .font(.system(size: 26))
+                        .frame(width: 48, height: 48)
+                        .background(Circle().fill(RelayStyle.softGradient))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(verbatim: relay.title)
+                            .font(Theme.text(.headline, weight: .bold))
+                            .foregroundStyle(Theme.textPrimary)
+                        Text("relay.post.leg \(relay.legs.count + 1)")
+                            .font(Theme.text(.caption, weight: .semibold))
+                            .foregroundStyle(RelayStyle.orange)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(14)
+                .glassCard(cornerRadius: Theme.Radius.control)
+            } else {
+                HStack(spacing: 10) {
+                    Menu {
+                        ForEach(Relay.emojiPalette, id: \.self) { emoji in
+                            Button {
+                                HapticManager.shared.selection()
+                                relayEmoji = emoji
+                            } label: {
+                                Text(verbatim: emoji)
+                            }
+                        }
+                    } label: {
+                        Text(verbatim: relayEmoji)
+                            .font(.system(size: 24))
+                            .frame(width: 44, height: 44)
+                            .background(Circle().fill(RelayStyle.softGradient))
+                    }
+                    TextField("relay.post.title.placeholder", text: $relayTitle)
+                        .font(Theme.text(.body, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
+                        .submitLabel(.done)
+                    Text(verbatim: "\(relayTitle.count)/\(Relay.titleLimit)")
+                        .font(Theme.rounded(.caption, weight: .bold))
+                        .foregroundStyle(Theme.textSecondary)
+                        .monospacedDigit()
+                }
+                .padding(10)
+                .glassCard(cornerRadius: Theme.Radius.control)
+                .onChange(of: relayTitle) { _, newValue in
+                    if newValue.count > Relay.titleLimit {
+                        relayTitle = String(newValue.prefix(Relay.titleLimit))
+                    }
+                }
+            }
+            relayPassPicker
+        }
+        .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
+    private var relayPassPicker: some View {
+        let candidates = appState.relayCandidates(for: runningRelay)
+        return Menu {
+            if runningRelay != nil {
+                Button {
+                    HapticManager.shared.selection()
+                    relayPassTo = nil
+                    finishesRelay = true
+                } label: {
+                    Label("relay.post.finish", systemImage: "flag.checkered")
+                }
+            }
+            ForEach(candidates) { friend in
+                Button {
+                    HapticManager.shared.selection()
+                    relayPassTo = friend
+                    finishesRelay = false
+                } label: {
+                    Text(verbatim: friend.displayName)
+                }
+            }
+        } label: {
+            HStack(spacing: 10) {
+                if let friend = relayPassTo {
+                    AvatarBadge(user: friend, size: 30)
+                } else {
+                    Image(systemName: finishesRelay ? "flag.checkered" : "arrow.right.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(RelayStyle.orange)
+                        .frame(width: 30, height: 30)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("relay.post.passTo")
+                        .font(Theme.text(.caption))
+                        .foregroundStyle(Theme.textSecondary)
+                    Group {
+                        if let friend = relayPassTo {
+                            Text(verbatim: friend.displayName)
+                        } else if finishesRelay {
+                            Text("relay.post.finish")
+                        } else if candidates.isEmpty {
+                            Text("relay.post.noFriends")
+                        } else {
+                            Text("relay.post.choose")
+                        }
+                    }
+                    .font(Theme.text(.subheadline, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .padding(14)
+            .glassCard(cornerRadius: Theme.Radius.control)
+            .overlay {
+                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                    .strokeBorder(RelayStyle.gradient, lineWidth: relayPassTo == nil && !finishesRelay ? 1.5 : 0)
+            }
+        }
+    }
+
+    private var relayNote: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "figure.run.circle.fill")
+                .foregroundStyle(RelayStyle.orange)
+            Text("relay.post.note \(LocaleFormatter.distance(meters: Relay.minimumLegDistance))")
+                .font(Theme.text(.footnote))
+                .foregroundStyle(Theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
     }
 
     private var capsuleNote: some View {
@@ -389,6 +562,9 @@ struct PostCaptureSheet: View {
                     } else if mode == .capsule {
                         Image(systemName: "shippingbox.fill")
                         Text("post.capsule.drop")
+                    } else if mode == .relay {
+                        Image(systemName: finishesRelay ? "flag.checkered" : "figure.run")
+                        Text(finishesRelay ? "relay.post.finish" : "relay.post.pass")
                     } else {
                         Image(systemName: "mappin.and.ellipse")
                         Text("post.drop")
@@ -396,7 +572,7 @@ struct PostCaptureSheet: View {
                 }
             }
             .buttonStyle(PrimaryGradientButtonStyle())
-            .disabled(shot.location == nil || isPublishing)
+            .disabled(!canDrop)
 
             Button {
                 HapticManager.shared.tap()
@@ -427,6 +603,30 @@ struct PostCaptureSheet: View {
         isPublishing = true
         errorMessage = nil
         let trimmedCaption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        if mode == .relay {
+            let draft: RelayDraft
+            if let relay = runningRelay {
+                draft = .leg(relayID: relay.id, passTo: finishesRelay ? nil : relayPassTo?.id)
+            } else if let friend = relayPassTo {
+                draft = .start(title: relayTitle.trimmingCharacters(in: .whitespacesAndNewlines), emoji: relayEmoji, passTo: friend.id)
+            } else {
+                isPublishing = false
+                return
+            }
+            let place = placeName
+            Task {
+                do {
+                    try await appState.publishRelay(draft, processed: shot.processed, location: location, placeName: place, caption: trimmedCaption)
+                    isPublishing = false
+                    onDropped()
+                } catch {
+                    HapticManager.shared.error()
+                    errorMessage = error.localizedDescription
+                    isPublishing = false
+                }
+            }
+            return
+        }
         if mode == .capsule {
             let hintText = hint
             let target = recipient

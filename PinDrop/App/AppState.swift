@@ -124,6 +124,12 @@ final class AppState {
     private(set) var presence: PresenceState?
     /// Other people's public places around the user.
     private(set) var publicPlaces: [PublicPlace] = []
+    /// Relays (Staffette) you or your friends are running.
+    var relays: [Relay] = []
+    /// The relay sheet on screen.
+    var presentedRelay: Relay?
+    /// Set while you are running your leg: the camera publishes it as the next leg.
+    var relayRun: Relay?
     private(set) var notifications: [AppNotification] = []
     /// Time spent together, keyed by friend id.
     private(set) var friendTimes: [UUID: FriendTime] = [:]
@@ -947,6 +953,8 @@ final class AppState {
                 await refresh()
                 openPin(pinID)
             }
+        case .relay(let relayID):
+            openRelay(relayID)
         case .notifications:
             isNotificationsPresented = true
         }
@@ -972,6 +980,9 @@ final class AppState {
         isNotificationsPresented = false
         presentedProfile = nil
         publicPlaces = []
+        relays = []
+        presentedRelay = nil
+        relayRun = nil
         notifications = []
         friendTimes = [:]
         trail = []
@@ -1062,7 +1073,8 @@ final class AppState {
         async let heartbeatLoad: Void = sendHeartbeatIfNeeded()
         async let presenceLoad: Void = refreshOnlinePresence()
         async let friendLocationsLoad: Void = reloadFriendLocations()
-        _ = await (notificationsLoad, friendTimesLoad, publicPlacesLoad, heartbeatLoad, presenceLoad, friendLocationsLoad)
+        async let relaysLoad: Void = reloadRelays()
+        _ = await (notificationsLoad, friendTimesLoad, publicPlacesLoad, heartbeatLoad, presenceLoad, friendLocationsLoad, relaysLoad)
         if userLocation == nil {
             try? await dataService.reportLocation(nil, permission: locationService.permissionName)
         }

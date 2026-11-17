@@ -94,6 +94,12 @@ struct MainMapView: View {
         .fullScreenCover(item: $state.syncShotContext) { context in
             SyncShotStudioView(context: context)
         }
+        .sheet(item: $state.presentedRelay) { relay in
+            RelaySheet(relay: relay)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(Theme.Radius.sheet)
+        }
         .sheet(item: $state.presentedCapsule) { capsule in
             GeoCapsuleSheet(capsule: capsule)
                 .presentationDetents([.medium, .large])
@@ -475,6 +481,25 @@ struct MainMapView: View {
                     )
             }
 
+            // Relays (Staffette): the line from leg to leg, with the runners.
+            ForEach(appState.visibleRelays) { relay in
+                if relay.legs.count >= 2 {
+                    RelayLine(relay: relay)
+                }
+                ForEach(relay.legs) { leg in
+                    Annotation("", coordinate: leg.coordinate, anchor: .center) {
+                        Button {
+                            HapticManager.shared.tap()
+                            appState.presentedRelay = relay
+                        } label: {
+                            RelayLegMarker(relay: relay, leg: leg)
+                        }
+                        .buttonStyle(PressableButtonStyle())
+                    }
+                    .annotationTitles(.hidden)
+                }
+            }
+
             ForEach(farZoom ? [] : nearbyLockedCapsules) { capsule in
                 MapCircle(center: capsule.coordinate, radius: GeoCapsule.unlockRadius)
                     .foregroundStyle(Color(hex: 0xF59E0B).opacity(0.16))
@@ -702,6 +727,13 @@ struct MainMapView: View {
                 )
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
+            if let baton = appState.myBatons.first {
+                RelayBatonBanner(relay: baton) {
+                    HapticManager.shared.tap()
+                    appState.presentedRelay = baton
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
             Spacer(minLength: 0)
             if let event = appState.activeCrossPath {
                 CrossPathBannerView(
@@ -739,6 +771,7 @@ struct MainMapView: View {
         .animation(Theme.spring, value: appState.isFriendsLocationBannerDismissed)
         .animation(Theme.spring, value: appState.activeCrossPath)
         .animation(Theme.spring, value: appState.incomingSyncInvite)
+        .animation(Theme.spring, value: appState.myBatons.map(\.id))
         .animation(Theme.spring, value: appState.syncShotCandidates.map(\.id))
     }
 

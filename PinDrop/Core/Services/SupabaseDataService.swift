@@ -360,6 +360,139 @@ final class SupabaseDataService: Sendable {
             .value
     }
 
+    // MARK: - Relays
+
+    /// The relays you can see (yours, and your friends'), active ones first.
+    func fetchRelays() async throws -> [Relay] {
+        try await client
+            .rpc("my_relays")
+            .execute()
+            .value
+    }
+
+    /// Uploads the leg photo to relays/{me}/{relay}/{leg}.jpg and its thumbnail.
+    private func uploadRelayPhoto(relayID: UUID, legID: UUID, image: ProcessedImage) async throws -> (image: String, thumb: String) {
+        let uid = try await currentUserID()
+        let folder = "\(Self.storageID(uid))/\(Self.storageID(relayID))"
+        let imagePath = "\(folder)/\(Self.storageID(legID)).jpg"
+        let thumbPath = "\(folder)/\(Self.storageID(legID))_thumb.jpg"
+        let options = FileOptions(cacheControl: "604800", contentType: "image/jpeg", upsert: false)
+        let bucket = client.storage.from("relays")
+        _ = try await bucket.upload(imagePath, data: image.fullData, options: options)
+        do {
+            _ = try await bucket.upload(thumbPath, data: image.thumbnailData, options: options)
+        } catch {
+            _ = try? await bucket.remove(paths: [imagePath])
+            throw error
+        }
+        return (imagePath, thumbPath)
+    }
+
+    /// Starts a relay with your photo as the first leg and passes the baton to a friend.
+    func startRelay(title: String, emoji: String, image: ProcessedImage, location: GeoPoint, placeName: String?, caption: String, passTo: UUID) async throws -> UUID {
+        struct Params: Encodable, Sendable {
+            let relay_id: UUID
+            let leg_id: UUID
+            let title: String
+            let emoji: String
+            let lat: Double
+            let lon: Double
+            let place_name: String?
+            let caption: String
+            let image_path: String
+            let thumb_path: String
+            let pass_to: UUID
+
+            func encode(to encoder: any Encoder) throws {
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                try c.encode(relay_id, forKey: .relay_id)
+                try c.encode(leg_id, forKey: .leg_id)
+                try c.encode(title, forKey: .title)
+                try c.encode(emoji, forKey: .emoji)
+                try c.encode(lat, forKey: .lat)
+                try c.encode(lon, forKey: .lon)
+                if let place_name { try c.encode(place_name, forKey: .place_name) } else { try c.encodeNil(forKey: .place_name) }
+                try c.encode(caption, forKey: .caption)
+                try c.encode(image_path, forKey: .image_path)
+                try c.encode(thumb_path, forKey: .thumb_path)
+                try c.encode(pass_to, forKey: .pass_to)
+            }
+
+            enum CodingKeys: String, CodingKey {
+                case relay_id, leg_id, title, emoji, lat, lon, place_name, caption, image_path, thumb_path, pass_to
+            }
+        }
+        let relayID = UUID()
+        let legID = UUID()
+        let paths = try await uploadRelayPhoto(relayID: relayID, legID: legID, image: image)
+        do {
+            try await client
+                .rpc("start_relay", params: Params(
+                    relay_id: relayID, leg_id: legID,
+                    title: String(title.prefix(Relay.titleLimit)), emoji: emoji,
+                    lat: location.latitude, lon: location.longitude,
+                    place_name: placeName.map { String($0.prefix(120)) },
+                    caption: String(caption.prefix(40)),
+                    image_path: paths.image, thumb_path: paths.thumb,
+                    pass_to: passTo
+                ))
+                .execute()
+        } catch {
+            _ = try? await client.storage.from("relays").remove(paths: [paths.image, paths.thumb])
+            throw error
+        }
+        return relayID
+    }
+
+    /// Runs your leg and passes the baton on (or finishes the relay when `passTo` is nil).
+    func runRelayLeg(relayID: UUID, image: ProcessedImage, location: GeoPoint, placeName: String?, caption: String, passTo: UUID?) async throws {
+        struct Params: Encodable, Sendable {
+            let target: UUID
+            let leg_id: UUID
+            let lat: Double
+            let lon: Double
+            let place_name: String?
+            let caption: String
+            let image_path: String
+            let thumb_path: String
+            let pass_to: UUID?
+
+            func encode(to encoder: any Encoder) throws {
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                try c.encode(target, forKey: .target)
+                try c.encode(leg_id, forKey: .leg_id)
+                try c.encode(lat, forKey: .lat)
+                try c.encode(lon, forKey: .lon)
+                if let place_name { try c.encode(place_name, forKey: .place_name) } else { try c.encodeNil(forKey: .place_name) }
+                try c.encode(caption, forKey: .caption)
+                try c.encode(image_path, forKey: .image_path)
+                try c.encode(thumb_path, forKey: .thumb_path)
+                if let pass_to { try c.encode(pass_to, forKey: .pass_to) } else { try c.encodeNil(forKey: .pass_to) }
+            }
+
+            enum CodingKeys: String, CodingKey {
+                case target, leg_id, lat, lon, place_name, caption, image_path, thumb_path, pass_to
+            }
+        }
+        let legID = UUID()
+        let paths = try await uploadRelayPhoto(relayID: relayID, legID: legID, image: image)
+        do {
+            try await client
+                .rpc("run_relay_leg", params: Params(
+                    target: relayID, leg_id: legID,
+                    lat: location.latitude, lon: location.longitude,
+                    place_name: placeName.map { String($0.prefix(120)) },
+                    caption: String(caption.prefix(40)),
+                    image_path: paths.image, thumb_path: paths.thumb,
+                    pass_to: passTo
+                ))
+                .execute()
+        } catch {
+            _ = try? await client.storage.from("relays").remove(paths: [paths.image, paths.thumb])
+            throw error
+        }
+    }
+
     /// New device notification events after `cursor`. With a nil cursor the server returns
     /// only a "cursor" row with the latest event id.
     func fetchPendingPush(after cursor: Int64?) async throws -> [PushEvent] {
