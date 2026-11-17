@@ -765,7 +765,7 @@ async function updateLocation(request = false) {
   scheduleLayout(true);
   updateZones();
   checkCapsuleProximity();
-  invoke("report_location", { lat: pos.lat, lon: pos.lon, granted: true }).catch(() => {});
+  invoke("report_location", { lat: pos.lat, lon: pos.lon, granted: true, always: alwaysOn() }).catch(() => {});
   recordPresenceIfNeeded(pos);
 }
 
@@ -895,8 +895,9 @@ async function startMain() {
   setInterval(pollInvites, 4000);
   setInterval(updateStatus, 30000);
   startSocial();
+  setTimeout(() => syncAlways(true), 4000);
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) { refresh(); updateLocation(false); }
+    if (!document.hidden) { refresh(); updateLocation(false); syncAlways(); }
   });
 }
 
@@ -1017,11 +1018,14 @@ $("profileBtn").addEventListener("click", () => {
   openSheet(`<div class="sheet-head"><div class="author">${avatarHTML(me)}<div>${esc(me.display_name)}<small>@${esc(me.username)}</small></div></div><button class="close-x" data-close>${ICON.x}</button></div>
     ${me.invite_code ? `<div class="stat"><span>CODICE INVITO</span><b style="letter-spacing:2px">${esc(me.invite_code)}</b></div>` : ""}
     <p class="muted small" style="margin:0">Gli amici possono aggiungerti con @${esc(me.username)}${me.invite_code ? " o con il codice invito" : ""}.</p>
+    <h3>📍 Posizione</h3>
+    <div id="alwaysBox"></div>
     <h3>🎵 Cosa stai ascoltando</h3>
     ${musicCardHTML(state.music.get(me.id))}
     <div id="musicBox"><p class="muted small">Caricamento…</p></div>
     <button class="danger" data-act="logout">Esci da PinDrop</button>`, (root) => {
     renderMusicBox(root.querySelector("#musicBox"));
+    renderAlwaysBox(root.querySelector("#alwaysBox"));
     root.querySelector('[data-act="logout"]').addEventListener("click", async () => {
       await invoke("sign_out").catch(() => {});
       location.reload();

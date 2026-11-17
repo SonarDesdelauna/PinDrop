@@ -49,7 +49,12 @@ jobs:
           npm run tauri -- android init --ci
           npm run tauri -- icon src-tauri/app-icon.png
           MANIFEST=src-tauri/gen/android/app/src/main/AndroidManifest.xml
-          sed -i '0,/<application/s//<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" \/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" \/>\n    <uses-permission android:name="android.permission.CAMERA" \/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO" \/>\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" \/>\n    <uses-permission android:name="android.permission.VIBRATE" \/>\n    <uses-feature android:name="android.hardware.location.gps" android:required="false" \/>\n    <uses-feature android:name="android.hardware.camera" android:required="false" \/>\n    <application/' "$MANIFEST"
+          sed -i '0,/<application/s//<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" \/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" \/>\n    <uses-permission android:name="android.permission.CAMERA" \/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO" \/>\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" \/>\n    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" \/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" \/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" \/>\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" \/>\n    <uses-permission android:name="android.permission.VIBRATE" \/>\n    <uses-feature android:name="android.hardware.location.gps" android:required="false" \/>\n    <uses-feature android:name="android.hardware.camera" android:required="false" \/>\n    <application/' "$MANIFEST"
+          # "Always" location: background service next to MainActivity, kept by R8 (called through JNI).
+          ACT_DIR=$(dirname "$(find src-tauri/gen/android/app/src/main -name 'MainActivity.kt' | head -n1)")
+          cp native/LocationService.java "$ACT_DIR/"
+          sed -i 's#</application>#    <service android:name="com.pindrop.app.LocationService" android:exported="false" android:foregroundServiceType="location" \/>\n    <\/application>#' "$MANIFEST"
+          echo '-keep class com.pindrop.app.LocationService { *; }' >> src-tauri/gen/android/app/proguard-rules.pro
           cat "$MANIFEST"
 
       - name: Build APK

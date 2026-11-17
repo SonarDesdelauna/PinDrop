@@ -13,6 +13,7 @@ use std::{
 };
 use tauri::{Manager, State};
 
+mod always;
 mod features;
 mod social;
 
@@ -338,8 +339,8 @@ async fn friend_locations(state: State<'_, AppData>) -> Res<Value> {
 }
 
 #[tauri::command]
-async fn report_location(state: State<'_, AppData>, lat: Option<f64>, lon: Option<f64>, granted: bool) -> Res<()> {
-    let perm = if granted { "when_in_use" } else { "denied" };
+async fn report_location(state: State<'_, AppData>, lat: Option<f64>, lon: Option<f64>, granted: bool, always: Option<bool>) -> Res<()> {
+    let perm = if !granted { "denied" } else if always.unwrap_or(false) { "always" } else { "when_in_use" };
     state
         .rpc("report_location", json!({ "lat": lat, "lon": lon, "perm": perm }))
         .await?;
@@ -526,6 +527,7 @@ pub fn run() {
     builder
         .manage(AppData { http, session: Mutex::new(None), file: Mutex::new(None) })
         .setup(|app| {
+            always::remember(app.handle());
             if let Ok(dir) = app.path().app_data_dir() {
                 let _ = fs::create_dir_all(&dir);
                 let path = dir.join("session.json");
@@ -594,7 +596,11 @@ pub fn run() {
             social::fetch_stories,
             social::publish_story,
             social::mark_story_viewed,
-            social::delete_story
+            social::delete_story,
+            always::always_location_status,
+            always::request_always_location,
+            always::open_app_settings,
+            always::set_always_location
         ])
         .run(tauri::generate_context!())
         .expect("error while running PinDrop");
