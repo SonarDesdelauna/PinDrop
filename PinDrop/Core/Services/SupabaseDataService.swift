@@ -360,6 +360,14 @@ final class SupabaseDataService: Sendable {
             .value
     }
 
+    /// Everyone who has been at a public place, most visits first.
+    func fetchPlaceVisitors(_ placeID: UUID) async throws -> [PlaceVisitor] {
+        try await client
+            .rpc("public_place_visitors", params: ["place": placeID])
+            .execute()
+            .value
+    }
+
     /// Public places of one user (shown on their profile).
     func fetchPublicPlaces(of userID: UUID) async throws -> [PlaceSummary] {
         try await client

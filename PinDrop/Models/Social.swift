@@ -67,6 +67,47 @@ struct PublicPlace: Identifiable, Decodable, Hashable, Sendable {
     }
 }
 
+/// Someone who has been at a public place, with how many times (`public_place_visitors`).
+struct PlaceVisitor: Identifiable, Decodable, Hashable, Sendable {
+    let userID: UUID
+    let displayName: String
+    let username: String
+    let avatarColor: String
+    let avatarPath: String?
+    let visitCount: Int
+    let lastVisitAt: Date?
+    let isFriend: Bool
+    let isMe: Bool
+
+    var id: UUID { userID }
+
+    enum CodingKeys: String, CodingKey {
+        case userID = "user_id"
+        case displayName = "display_name"
+        case username
+        case avatarColor = "avatar_color"
+        case avatarPath = "avatar_path"
+        case visitCount = "visit_count"
+        case lastVisitAt = "last_visit_at"
+        case isFriend = "is_friend"
+        case isMe = "is_me"
+    }
+
+    var profile: UserProfile {
+        UserProfile(
+            id: userID,
+            username: username,
+            displayName: displayName,
+            bio: "",
+            statusEmoji: "",
+            avatarColorHex: avatarColor,
+            avatarPath: avatarPath,
+            inviteCode: "",
+            isSetup: true
+        )
+    }
+}
+
 /// An in-app notification (`public.notifications`).
 struct AppNotification: Identifiable, Decodable, Hashable, Sendable {
     enum Kind: String, Decodable, Sendable {

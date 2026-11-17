@@ -25,6 +25,13 @@ struct MainMapView: View {
     @State private var edgeZoomOriginY: CGFloat = 0
     @State private var edgeZoomDelta: CGFloat = 0
     @State private var edgeZoomSide: HorizontalEdge?
+    /// Height of the edge strip and the zoom speed (log2 of zoom per point) up and down.
+    @State private var edgeZoomHeight: CGFloat = 0
+    @State private var edgeZoomRateIn: Double = 1 / 110
+    @State private var edgeZoomRateOut: Double = 1 / 110
+    /// Camera distance showing the whole planet, reached at the bottom of the edge strip.
+    private static let edgeZoomMaxDistance: Double = 30_000_000
+    private static let edgeZoomMinDistance: Double = 120
     private static let globeAltitude: Double = 1_200_000
     /// Zoomed out further than this (meters per screen point) only your dot is drawn.
     private static let farZoomScale: Double = 1_200
@@ -381,6 +388,11 @@ struct MainMapView: View {
         Color.clear
             .frame(width: 26)
             .contentShape(Rectangle())
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.height
+            } action: { height in
+                edgeZoomHeight = height
+            }
             .overlay(alignment: side == .leading ? .leading : .trailing) {
                 if edgeZoomSide == side {
                     edgeZoomIndicator
@@ -399,14 +411,23 @@ struct MainMapView: View {
                             edgeZoomStart = camera
                             edgeZoomOriginY = value.location.y
                             edgeZoomDelta = 0
+                            // From the top of the strip to its bottom spans the whole range:
+                            // the bottom is always the full globe, the top the closest street view.
+                            let current = min(max(camera.distance, Self.edgeZoomMinDistance), Self.edgeZoomMaxDistance)
+                            let below = max(Double(edgeZoomHeight - value.location.y) - 8, 60)
+                            let above = max(Double(value.location.y) - 8, 60)
+                            edgeZoomRateOut = max(log2(Self.edgeZoomMaxDistance / current) / below, 1 / 110)
+                            edgeZoomRateIn = max(log2(current / Self.edgeZoomMinDistance) / above, 1 / 110)
                             withAnimation(Theme.spring) { edgeZoomSide = side }
                             HapticManager.shared.selection()
                         }
                         guard let start = edgeZoomStart else { return }
                         let delta = value.location.y - edgeZoomOriginY
                         edgeZoomDelta = delta
-                        // Up (negative delta) zooms in: every 110 pt doubles the zoom.
-                        let distance = min(max(start.distance * pow(2, Double(delta) / 110), 120), 30_000_000)
+                        // Up (negative delta) zooms in, down zooms out, so that the ends of the strip
+                        // are the closest view and the whole planet.
+                        let rate = delta > 0 ? edgeZoomRateOut : edgeZoomRateIn
+                        let distance = min(max(start.distance * pow(2, Double(delta) * rate), Self.edgeZoomMinDistance), Self.edgeZoomMaxDistance)
                         cameraPosition = .camera(MapCamera(
                             centerCoordinate: start.centerCoordinate,
                             distance: distance,

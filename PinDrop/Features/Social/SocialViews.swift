@@ -585,6 +585,155 @@ struct BestFriendProgressView: View {
     }
 }
 
+// MARK: - Public place visitors
+
+/// Who has been at a public place and how many times: your friends, or everyone,
+/// from who has been there the most to who has been there the least.
+struct PlaceVisitorsSection: View {
+    private enum Scope: Hashable {
+        case friends
+        case everyone
+    }
+
+    let placeID: UUID
+
+    @Environment(AppState.self) private var appState
+    @State private var visitors: [PlaceVisitor] = []
+    @State private var isLoading = true
+    @State private var scope: Scope = .friends
+
+    private var shown: [PlaceVisitor] {
+        switch scope {
+        case .friends: visitors.filter { $0.isFriend || $0.isMe }
+        case .everyone: visitors
+        }
+    }
+
+    private var totalVisits: Int {
+        shown.reduce(0) { $0 + $1.visitCount }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Label("visitors.title", systemImage: "trophy.fill")
+                    .font(Theme.text(.headline, weight: .bold))
+                    .foregroundStyle(Theme.textPrimary)
+                Spacer(minLength: 8)
+                if !shown.isEmpty {
+                    Text("places.visits \(totalVisits)")
+                        .font(Theme.text(.caption, weight: .semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+
+            Picker(selection: $scope) {
+                Text("visitors.friends").tag(Scope.friends)
+                Text("visitors.everyone").tag(Scope.everyone)
+            } label: {
+                Text("visitors.title")
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: scope) {
+                HapticManager.shared.selection()
+            }
+
+            if isLoading && visitors.isEmpty {
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+            } else if shown.isEmpty {
+                Text(scope == .friends ? "visitors.empty.friends" : "visitors.empty.everyone")
+                    .font(Theme.text(.subheadline))
+                    .foregroundStyle(Theme.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+            } else {
+                VStack(spacing: 4) {
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { index, visitor in
+                        row(visitor, rank: index + 1)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .glassCard()
+        .animation(Theme.spring, value: scope)
+        .task(id: placeID) {
+            isLoading = true
+            if let fetched = try? await appState.dataService.fetchPlaceVisitors(placeID) {
+                withAnimation(Theme.spring) {
+                    visitors = fetched
+                }
+            }
+            isLoading = false
+        }
+    }
+
+    @ViewBuilder
+    private func row(_ visitor: PlaceVisitor, rank: Int) -> some View {
+        let content = HStack(spacing: 12) {
+            rankBadge(rank)
+            AvatarBadge(user: visitor.profile, size: 36)
+            VStack(alignment: .leading, spacing: 1) {
+                Group {
+                    if visitor.isMe {
+                        Text("visitors.you")
+                    } else {
+                        Text(verbatim: visitor.displayName)
+                    }
+                }
+                .font(Theme.text(.subheadline, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(1)
+                if let last = visitor.lastVisitAt {
+                    Text("places.lastVisit \(LocaleFormatter.relativeTimestamp(last, relativeTo: .now))")
+                        .font(Theme.text(.caption))
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 8)
+            Text("places.visits \(visitor.visitCount)")
+                .font(Theme.rounded(.subheadline, weight: .heavy))
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(1)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .glassCapsule()
+                .fixedSize()
+        }
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+
+        if visitor.isMe {
+            content
+        } else {
+            NavigationLink(value: visitor.profile) {
+                content
+            }
+            .buttonStyle(PressableButtonStyle(pressedScale: 0.98))
+        }
+    }
+
+    @ViewBuilder
+    private func rankBadge(_ rank: Int) -> some View {
+        Group {
+            switch rank {
+            case 1: Text(verbatim: "🥇").font(.system(size: 22))
+            case 2: Text(verbatim: "🥈").font(.system(size: 22))
+            case 3: Text(verbatim: "🥉").font(.system(size: 22))
+            default:
+                Text(verbatim: "\(rank)")
+                    .font(Theme.rounded(.subheadline, weight: .heavy))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+        }
+        .frame(width: 28)
+    }
+}
+
 // MARK: - Public place sheet
 
 /// Someone else's public place tapped on the map.
@@ -666,6 +815,8 @@ struct PublicPlaceSheet: View {
                         .glassCard()
                     }
                     .buttonStyle(PressableButtonStyle(pressedScale: 0.98))
+
+                    PlaceVisitorsSection(placeID: place.id)
 
                     if alreadySaved {
                         Label("notifications.placeSaved", systemImage: "checkmark.circle.fill")
