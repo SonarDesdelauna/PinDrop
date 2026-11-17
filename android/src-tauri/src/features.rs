@@ -102,10 +102,13 @@ pub async fn create_capsule(
     recipient: Option<String>,
     full: String,
     thumb: String,
+    video: Option<String>,
 ) -> Res<Value> {
     let session = state.token().await?;
     let uid = session.user_id.to_lowercase();
     let id = uuid::Uuid::new_v4().to_string();
+    let video_path = format!("{uid}/{id}/video.mp4");
+    let has_video = video.as_deref().is_some_and(|v| !v.is_empty());
     let paths = [format!("{uid}/{id}/full.jpg"), format!("{uid}/{id}/thumb.jpg")];
     let images = [full, thumb];
 
@@ -117,6 +120,10 @@ pub async fn create_capsule(
             break;
         }
     }
+    if result.is_ok() && has_video {
+        let bytes = B64.decode(video.unwrap_or_default()).map_err(|e| e.to_string())?;
+        result = state.upload_as(&session, "capsules", &video_path, bytes, "video/mp4").await.map(|_| Value::Null);
+    }
     if result.is_ok() {
         let row = json!({
             "id": id,
@@ -125,6 +132,7 @@ pub async fn create_capsule(
             "hint": hint.trim().chars().take(80).collect::<String>(),
             "image_path": paths[0],
             "thumb_path": paths[1],
+            "video_path": if has_video { Some(video_path.clone()) } else { None },
             "recipient_id": recipient.filter(|r| !r.is_empty())
         });
         result = state
@@ -154,7 +162,7 @@ pub async fn create_capsule(
         let _ = finish(
             state
                 .authed(Method::DELETE, "/storage/v1/object/capsules", &session)
-                .json(&json!({ "prefixes": paths })),
+                .json(&json!({ "prefixes": [&paths[0], &paths[1], &video_path] })),
         )
         .await;
     }

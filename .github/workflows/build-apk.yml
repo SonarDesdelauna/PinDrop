@@ -49,7 +49,7 @@ jobs:
           npm run tauri -- android init --ci
           npm run tauri -- icon src-tauri/app-icon.png
           MANIFEST=src-tauri/gen/android/app/src/main/AndroidManifest.xml
-          sed -i '0,/<application/s//<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" \/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" \/>\n    <uses-permission android:name="android.permission.CAMERA" \/>\n    <uses-permission android:name="android.permission.VIBRATE" \/>\n    <uses-feature android:name="android.hardware.location.gps" android:required="false" \/>\n    <uses-feature android:name="android.hardware.camera" android:required="false" \/>\n    <application/' "$MANIFEST"
+          sed -i '0,/<application/s//<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" \/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" \/>\n    <uses-permission android:name="android.permission.CAMERA" \/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO" \/>\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" \/>\n    <uses-permission android:name="android.permission.VIBRATE" \/>\n    <uses-feature android:name="android.hardware.location.gps" android:required="false" \/>\n    <uses-feature android:name="android.hardware.camera" android:required="false" \/>\n    <application/' "$MANIFEST"
           cat "$MANIFEST"
 
       - name: Build APK

@@ -7,6 +7,7 @@
   <title>PinDrop</title>
   <link rel="stylesheet" href="vendor/maplibre-gl.css">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="social.css">
 </head>
 <body>
   <!-- Login / sign up -->
@@ -44,12 +45,19 @@
     <div id="map"></div>
 
     <div class="top">
-      <button id="viewsPill" class="pill glass views"></button>
+      <div class="top-left">
+        <div id="storiesBar" class="stories-bar"></div>
+        <button id="viewsPill" class="pill glass views"></button>
+      </div>
       <div class="side">
         <button id="profileBtn" class="avatar-btn"></button>
         <button id="bellBtn" class="fab glass" aria-label="Notifiche">
           <svg viewBox="0 0 24 24"><path d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22zm7-6V11a7 7 0 0 0-5.5-6.84V3.5a1.5 1.5 0 0 0-3 0v.66A7 7 0 0 0 5 11v5l-2 2v1h18v-1z"/></svg>
           <span id="bellBadge" class="badge hidden"></span>
+        </button>
+        <button id="chatBtn" class="fab glass" aria-label="Chat">
+          <svg viewBox="0 0 24 24"><path d="M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 4v-4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
+          <span id="chatBadge" class="badge hidden"></span>
         </button>
         <button id="recapBtn" class="fab glass" aria-label="Recap">
           <svg viewBox="0 0 24 24"><path d="M4 5h16v3H4zM6 10h12v9H6z" opacity=".35"/><path d="M12 11.5l1.2 2.6 2.8.3-2.1 1.9.6 2.8-2.5-1.5-2.5 1.5.6-2.8-2.1-1.9 2.8-.3z"/></svg>
@@ -83,23 +91,42 @@
     <input id="photoInput" type="file" accept="image/*" hidden>
   </section>
 
-  <!-- In-app camera -->
+  <!-- In-app camera: the viewfinder is the exact shape of the shot -->
   <section id="camera" class="camera hidden">
-    <video id="video" playsinline autoplay muted></video>
-    <div id="flash" class="flash"></div>
     <div class="cam-top">
       <button id="camClose" class="fab glass" aria-label="Chiudi"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
       <div id="camMode" class="pill glass"></div>
+      <div id="recInfo" class="rec-info hidden"><i></i><span id="recTime">0:00</span></div>
       <button id="camFlip" class="fab glass" aria-label="Gira"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z" opacity=".4"/><path d="M8.5 13a3.5 3.5 0 0 1 6-2.4l-1.3 1.2H17V8l-1.2 1.3A5.3 5.3 0 0 0 6.7 13zm7 0a3.5 3.5 0 0 1-6 2.4l1.3-1.2H7V18l1.2-1.3A5.3 5.3 0 0 0 17.3 13z"/></svg></button>
     </div>
-    <div id="countdown" class="countdown hidden"></div>
+    <div id="vfWrap" class="vf-wrap">
+      <div id="viewfinder" class="viewfinder">
+        <video id="video" playsinline autoplay muted></video>
+        <div id="flash" class="flash"></div>
+        <div id="countdown" class="countdown hidden"></div>
+      </div>
+    </div>
     <div id="syncStatus" class="sync-status glass hidden"></div>
-    <div class="cam-bottom">
-      <button id="camGallery" class="fab glass" aria-label="Galleria"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3" opacity=".4"/><path d="M5 18l4.5-6 3.5 4.5 2.5-3L19 18z"/><circle cx="16" cy="8.5" r="1.8"/></svg></button>
-      <button id="shutter" class="shutter" aria-label="Scatta"><span></span></button>
-      <div class="fab-spacer"></div>
+    <div class="cam-controls">
+      <div id="camModes" class="cam-modes glass"><button data-cmode="pin">PIN</button><button data-cmode="story">STORIA</button></div>
+      <div class="cam-bottom">
+        <button id="camGallery" class="fab glass" aria-label="Galleria"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3" opacity=".4"/><path d="M5 18l4.5-6 3.5 4.5 2.5-3L19 18z"/><circle cx="16" cy="8.5" r="1.8"/></svg></button>
+        <button id="shutter" class="shutter" aria-label="Scatta">
+          <svg class="rec-ring" viewBox="0 0 104 104"><circle id="recRing" cx="52" cy="52" r="48" /></svg>
+          <span></span>
+          <div id="lockHint" class="lock-hint"><b>🔒</b><i>⌃</i></div>
+        </button>
+        <div class="fab-spacer"></div>
+      </div>
+      <p id="camHint" class="cam-hint"></p>
     </div>
   </section>
+
+  <!-- Chat room, story viewer and story editor (full screen) -->
+  <section id="chatRoom" class="chat-room hidden"></section>
+  <section id="storyViewer" class="story-viewer hidden"></section>
+  <section id="storyEditor" class="story-editor hidden"></section>
+  <input id="chatPhotoInput" type="file" accept="image/*" hidden>
 
   <!-- Bottom sheets -->
   <div id="sheet" class="sheet hidden">
@@ -114,5 +141,6 @@
 
   <script src="vendor/maplibre-gl.js"></script>
   <script src="app.js"></script>
+  <script src="social.js"></script>
 </body>
 </html>

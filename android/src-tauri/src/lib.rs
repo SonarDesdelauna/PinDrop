@@ -14,12 +14,13 @@ use std::{
 use tauri::{Manager, State};
 
 mod features;
+mod social;
 
 const SUPABASE_URL: &str = "https://tqtpkdxeedcjmlhabimg.supabase.co";
 /// Public (publishable) client key, same as the iOS app. Row Level Security protects the data.
 const SUPABASE_KEY: &str = "sb_publishable_jfZKfM7CgDgII_FZCmv5Tw_XLxNpTco";
-const PIN_SELECT: &str = "id,latitude,longitude,place_name,caption,image_path,thumb_path,blur_path,created_at,expires_at,sync_session_id,author:profiles!pins_author_id_fkey(*),reactions(user_id,emoji,created_at)";
-const CAPSULE_SELECT: &str = "id,latitude,longitude,hint,image_path,thumb_path,created_at,expires_at,recipient_id,author:profiles!geo_capsules_author_id_fkey(*)";
+const PIN_SELECT: &str = "id,latitude,longitude,place_name,caption,image_path,thumb_path,blur_path,video_path,created_at,expires_at,sync_session_id,author:profiles!pins_author_id_fkey(*),reactions(user_id,emoji,created_at)";
+const CAPSULE_SELECT: &str = "id,latitude,longitude,hint,image_path,thumb_path,video_path,created_at,expires_at,recipient_id,author:profiles!geo_capsules_author_id_fkey(*)";
 const FRIEND_SELECT: &str = "id,requester_id,addressee_id,status,created_at,requester:profiles!friendships_requester_id_fkey(*),addressee:profiles!friendships_addressee_id_fkey(*)";
 
 type Res<T> = Result<T, String>;
@@ -182,9 +183,14 @@ impl AppData {
     }
 
     async fn upload(&self, session: &Session, bucket: &str, path: &str, bytes: Vec<u8>) -> Res<()> {
+        self.upload_as(session, bucket, path, bytes, "image/jpeg").await
+    }
+
+    /// Uploads a file with its type (image/jpeg or video/mp4).
+    async fn upload_as(&self, session: &Session, bucket: &str, path: &str, bytes: Vec<u8>, content_type: &str) -> Res<()> {
         let request = self
             .authed(Method::POST, &format!("/storage/v1/object/{bucket}/{path}"), session)
-            .header("Content-Type", "image/jpeg")
+            .header("Content-Type", content_type)
             .header("cache-control", "max-age=21600")
             .header("x-upsert", "false")
             .body(bytes);
@@ -363,7 +369,12 @@ async fn fetch_pins(state: State<'_, AppData>) -> Res<Value> {
 /// Signed URLs (1 hour) for images in the private `pins` bucket: { path: url }.
 #[tauri::command]
 async fn sign_urls(state: State<'_, AppData>, paths: Vec<String>, bucket: Option<String>) -> Res<Value> {
-    let bucket = if bucket.as_deref() == Some("capsules") { "capsules" } else { "pins" };
+    let bucket = match bucket.as_deref() {
+        Some("capsules") => "capsules",
+        Some("chat") => "chat",
+        Some("stories") => "stories",
+        _ => "pins",
+    };
     let mut out = Map::new();
     if paths.is_empty() {
         return Ok(Value::Object(out));
@@ -400,6 +411,7 @@ async fn publish_pin(
     thumb: String,
     blur: String,
     sync_session_id: Option<String>,
+    video: Option<String>,
 ) -> Res<Value> {
     let session = state.token().await?;
     let uid = session.user_id.to_lowercase();
@@ -416,6 +428,12 @@ async fn publish_pin(
             break;
         }
     }
+    let video_path = format!("{folder}/video.mp4");
+    let has_video = video.as_deref().is_some_and(|v| !v.is_empty());
+    if result.is_ok() && has_video {
+        let bytes = B64.decode(video.unwrap_or_default()).map_err(|e| e.to_string())?;
+        result = state.upload_as(&session, "pins", &video_path, bytes, "video/mp4").await.map(|_| Value::Null);
+    }
     if result.is_ok() {
         let caption: String = caption.trim().chars().take(40).collect();
         let row = json!({
@@ -426,6 +444,7 @@ async fn publish_pin(
             "image_path": paths[0],
             "thumb_path": paths[1],
             "blur_path": paths[2],
+            "video_path": if has_video { Some(video_path.clone()) } else { None },
             "sync_session_id": sync_session_id
         });
         result = state
@@ -443,7 +462,7 @@ async fn publish_pin(
         let _ = finish(
             state
                 .authed(Method::DELETE, "/storage/v1/object/pins", &session)
-                .json(&json!({ "prefixes": paths })),
+                .json(&json!({ "prefixes": [&paths[0], &paths[1], &paths[2], &video_path] })),
         )
         .await;
     }
@@ -563,7 +582,19 @@ pub fn run() {
             features::delete_place,
             features::record_presence,
             features::fetch_notifications,
-            features::mark_notifications_read
+            features::mark_notifications_read,
+            social::chat_threads,
+            social::chat_messages,
+            social::open_direct_chat,
+            social::create_group_chat,
+            social::mark_chat_read,
+            social::leave_chat,
+            social::send_message,
+            social::chat_reaction,
+            social::fetch_stories,
+            social::publish_story,
+            social::mark_story_viewed,
+            social::delete_story
         ])
         .run(tauri::generate_context!())
         .expect("error while running PinDrop");

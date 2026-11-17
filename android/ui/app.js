@@ -18,6 +18,9 @@ const ICON = {
   lock: '<svg viewBox="0 0 24 24"><path d="M7 10V8a5 5 0 0 1 10 0v2h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1zm2 0h6V8a3 3 0 0 0-6 0z"/></svg>',
   bolt: '<svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>',
   x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" fill="none"/></svg>',
+  send: '<svg viewBox="0 0 24 24"><path d="M3.4 20.4l17.4-7.5a1 1 0 0 0 0-1.8L3.4 3.6a.9.9 0 0 0-1.3 1l1.9 6.4 9 1-9 1-1.9 6.4a.9.9 0 0 0 1.3 1z"/></svg>',
+  chat: '<svg viewBox="0 0 24 24"><path d="M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 4v-4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>',
+  back: '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>',
   gemSmall: '<svg viewBox="0 0 24 24"><path d="M12 2l7 6-7 14L5 8z"/></svg>',
   gem(opened) {
     const a = opened ? "#7c3aed" : "#f59e0b";
@@ -199,6 +202,7 @@ window.addEventListener("popstate", () => {
   layerOpen = false;
   hideSheet();
   closeCamera(true);
+  closeSocialOverlays();
 });
 
 function openSheet(html, mount) {
@@ -631,7 +635,7 @@ function renderMarkers(force) {
     const top = pins[0];
     const url = pinThumbURL(top);
     const cls = `m-pin${isMine(top) ? " mine" : ""}${top.sync_session_id ? " sync" : ""}`;
-    const html = `<div class="${cls}"><div class="frame">${url ? `<img src="${esc(url)}">` : '<div class="ph"></div>'}${isLocked(top) ? `<div class="lock">${ICON.lock}</div>` : ""}${pins.length > 1 ? `<div class="count">${pins.length}</div>` : ""}</div><div class="tail"></div></div>`;
+    const html = `<div class="${cls}"><div class="frame">${url ? `<img src="${esc(url)}">` : '<div class="ph"></div>'}${isLocked(top) ? `<div class="lock">${ICON.lock}</div>` : ""}${pins.length > 1 ? `<div class="count">${pins.length}</div>` : ""}${top.video_path && !isLocked(top) ? `<div class="video-badge">▶</div>` : ""}</div><div class="tail"></div></div>`;
     addMarker(element(html, () => openPins(pins)), [top.longitude, top.latitude]);
   }
 
@@ -710,7 +714,7 @@ function updateZones() {
 function updateStatus() {
   // Profile views, centered at the top (like the iPhone).
   const views = state.me?.view_count || 0;
-  $("viewsPill").innerHTML = `<svg viewBox="0 0 24 24" class="eye"><path d="M12 5C6.5 5 2.7 9.4 1.5 12c1.2 2.6 5 7 10.5 7s9.3-4.4 10.5-7C21.3 9.4 17.5 5 12 5zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/></svg><span><b class="accent">${views}</b> ${views === 1 ? "visualizzazione" : "visualizzazioni"} del profilo</span>`;
+  $("viewsPill").innerHTML = `<svg viewBox="0 0 24 24" class="eye"><path d="M12 5C6.5 5 2.7 9.4 1.5 12c1.2 2.6 5 7 10.5 7s9.3-4.4 10.5-7C21.3 9.4 17.5 5 12 5zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/></svg><span><b class="accent">${views}</b></span>`;
   // Sync Shot pill above the dock when a friend is close.
   const candidates = syncCandidates();
   const pill = $("syncPill");
@@ -890,6 +894,7 @@ async function startMain() {
   setInterval(() => loadFriends().catch(() => {}), 60000);
   setInterval(pollInvites, 4000);
   setInterval(updateStatus, 30000);
+  startSocial();
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) { refresh(); updateLocation(false); }
   });
@@ -988,15 +993,18 @@ function openFriend(friend) {
     ${friend.bio ? `<p class="muted" style="margin:0">${esc(friend.bio)}</p>` : ""}
     ${musicCardHTML(state.music.get(friend.id))}
     ${canSync ? `<button class="primary emerald" data-act="sync">⚡ Sync Shot con ${esc(firstName(friend))}</button>` : `<p class="muted small" style="margin:0">⚡ Il Sync Shot si attiva quando siete a meno di ${SYNC_M} m.</p>`}
+    <button class="primary" data-act="chat">💬 Scrivi a ${esc(firstName(friend))}</button>
     <div class="row">${loc ? `<button class="ghost grow" data-act="map">📍 Mostra sulla mappa</button>` : ""}${pin && !isLocked(pin) ? `<button class="ghost grow" data-act="pin">🖼️ La sua foto</button>` : ""}</div>`, (root) => {
     root.querySelector('[data-act="sync"]')?.addEventListener("click", () => startSync(friend));
+    root.querySelector('[data-act="chat"]')?.addEventListener("click", () => openDirectChat(friend));
     root.querySelector('[data-act="map"]')?.addEventListener("click", () => { closeSheet(); map.flyTo({ center: [loc.lon, loc.lat], zoom: 17, duration: 900 }); });
     root.querySelector('[data-act="pin"]')?.addEventListener("click", () => openPins([pin]));
   });
 }
 
 function openGroup(group) {
-  openSheet(`${head("Sono insieme")}${group.map((m) => `<div class="person" data-friend="${m.user_id}">${avatarHTML(m.profile)}<div class="info"><b>${esc(m.profile.display_name)}</b><span>${state.online.has(m.user_id) ? "● online" : esc(ago(m.updated_at))}</span></div></div>`).join("")}`, (root) => {
+  openSheet(`${head("Sono insieme")}${group.map((m) => `<div class="person" data-friend="${m.user_id}">${avatarHTML(m.profile)}<div class="info"><b>${esc(m.profile.display_name)}</b><span>${state.online.has(m.user_id) ? "● online" : esc(ago(m.updated_at))}</span></div></div>`).join("")}<button class="primary" data-act="hub">💬 Chat di gruppo per 24 ore</button>`, (root) => {
+    root.querySelector('[data-act="hub"]').addEventListener("click", (e) => { e.stopPropagation(); openHubChat(group.map((m) => m.profile), null, e.currentTarget); });
     root.addEventListener("click", (e) => {
       const row = e.target.closest("[data-friend]");
       if (row) openFriend(profileOf(row.dataset.friend));
@@ -1219,6 +1227,40 @@ $("bellBtn").addEventListener("click", async () => {
 });
 
 // ───────────── Camera ─────────────
+// The viewfinder is always the exact shape of the shot: 3:4 for pins, 9:16 for stories.
+// Tap the shutter for a photo, hold it for a video (max 10 s), slide up while holding to lock.
+
+const VIDEO_HOLD_MS = 170;
+const MAX_VIDEO_S = 10;
+const rec = { recording: false, starting: false, locked: false, stopWhenStarted: false, beganWhileRecording: false, pressAt: 0, startY: 0, holdTimer: 0 };
+
+function cameraRatio() {
+  return state.cameraMode === "story" ? 9 / 16 : 3 / 4;
+}
+
+function fitViewfinder() {
+  const wrap = $("vfWrap");
+  const box = $("viewfinder");
+  if (!wrap || $("camera").classList.contains("hidden")) return;
+  const W = wrap.clientWidth, H = wrap.clientHeight;
+  const ratio = cameraRatio();
+  const w = Math.min(W, H * ratio);
+  box.style.width = `${Math.round(w)}px`;
+  box.style.height = `${Math.round(w / ratio)}px`;
+}
+window.addEventListener("resize", fitViewfinder);
+
+let videoMimeCache;
+/** An MP4 type this phone can record (iPhones only play MP4), or "" when it can't. */
+function videoMime() {
+  if (videoMimeCache !== undefined) return videoMimeCache;
+  videoMimeCache = "";
+  if (typeof MediaRecorder === "undefined" || !HTMLCanvasElement.prototype.captureStream) return videoMimeCache;
+  for (const type of ["video/mp4;codecs=avc1.42E01E,mp4a.40.2", "video/mp4;codecs=avc1,mp4a", "video/mp4;codecs=avc1", "video/mp4"]) {
+    try { if (MediaRecorder.isTypeSupported(type)) { videoMimeCache = type; break; } } catch (_) {}
+  }
+  return videoMimeCache;
+}
 
 async function startStream() {
   stopStream();
@@ -1241,15 +1283,35 @@ function stopStream() {
   stream = null;
 }
 
+function updateCameraChrome() {
+  const mode = state.cameraMode;
+  const labels = { capsule: "💎 Geo-Capsula", sync: "⚡ Sync Shot" };
+  const switchable = mode === "pin" || mode === "story";
+  $("camMode").textContent = labels[mode] || "";
+  $("camMode").classList.toggle("hidden", switchable || rec.recording);
+  $("camModes").classList.toggle("hidden", !switchable || rec.recording);
+  $("camModes").querySelectorAll("[data-cmode]").forEach((b) => b.classList.toggle("on", b.dataset.cmode === mode));
+  $("recInfo").classList.toggle("hidden", !rec.recording);
+  $("shutter").classList.toggle("story-mode", mode === "story");
+  $("shutter").classList.toggle("recording", rec.recording);
+  $("shutter").classList.toggle("locked", rec.locked);
+  $("camGallery").style.visibility = mode === "sync" || rec.recording ? "hidden" : "";
+  const canVideo = !!videoMime() && mode !== "sync";
+  $("camHint").textContent = rec.recording
+    ? (rec.locked ? "Bloccato · tocca lo scatto per fermare, gira la fotocamera per riprendere l'altro lato" : "Scorri verso l'alto per bloccare · puoi girare la fotocamera mentre registri")
+    : mode === "story"
+      ? (canVideo ? "Tocca per una foto o tieni premuto per un video, poi se vuoi aggiungi effetti, testo e sticker." : "Scatta una foto, poi se vuoi aggiungi effetti, testo e sticker.")
+      : mode === "sync" ? "" : (canVideo ? "Tocca per una foto, tieni premuto per un video (max 10 s)" : "Tocca per scattare");
+  fitViewfinder();
+}
+
 async function openCamera(mode) {
   state.cameraMode = mode;
-  const labels = { pin: "📍 Nuovo pin", capsule: "💎 Geo-Capsula", sync: "⚡ Sync Shot" };
-  $("camMode").textContent = labels[mode];
   $("countdown").classList.add("hidden");
   $("syncStatus").classList.toggle("hidden", mode !== "sync");
   $("shutter").classList.toggle("hidden", mode === "sync");
-  $("camGallery").classList.toggle("hidden", mode === "sync");
   $("camera").classList.remove("hidden");
+  updateCameraChrome();
   hideSheet();
   pushLayer();
   const ok = await startStream();
@@ -1270,6 +1332,7 @@ function closeCamera(silent = false) {
     invoke("sync_cancel", { session: state.sync.id }).catch(() => {});
     state.sync = null;
   }
+  if (rec.recording || rec.starting) cancelVideo();
   stopStream();
   $("camera").classList.add("hidden");
   if (!silent) popLayer();
@@ -1278,22 +1341,46 @@ function closeCamera(silent = false) {
 $("camClose").addEventListener("click", () => closeCamera());
 $("camFlip").addEventListener("click", () => {
   state.facing = state.facing === "user" ? "environment" : "user";
+  vibrate(10);
   startStream();
 });
 $("camGallery").addEventListener("click", () => {
   $("photoInput").dataset.mode = state.cameraMode;
   $("photoInput").click();
 });
+$("camModes").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-cmode]");
+  if (!b || rec.recording) return;
+  state.cameraMode = b.dataset.cmode;
+  vibrate(10);
+  updateCameraChrome();
+});
 
+/** Draws the camera frame cropped to fill w×h (mirrored for the front camera, like the preview). */
+function drawCover(ctx, video, w, h) {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw || !vh) return false;
+  const scale = Math.max(w / vw, h / vh);
+  const sw = w / scale, sh = h / scale;
+  ctx.save();
+  if (state.facing === "user") { ctx.translate(w, 0); ctx.scale(-1, 1); }
+  ctx.drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, w, h);
+  ctx.restore();
+  return true;
+}
+
+/** A still of exactly what the viewfinder shows, at full resolution. */
 function captureFrame() {
   const video = $("video");
   if (!video.videoWidth) return null;
+  const ratio = cameraRatio();
+  const vw = video.videoWidth, vh = video.videoHeight;
+  let w = vw, h = Math.round(vw / ratio);
+  if (h > vh) { h = vh; w = Math.round(vh * ratio); }
   const canvas = document.createElement("canvas");
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  const ctx = canvas.getContext("2d");
-  if (state.facing === "user") { ctx.translate(canvas.width, 0); ctx.scale(-1, 1); }
-  ctx.drawImage(video, 0, 0);
+  canvas.width = w;
+  canvas.height = h;
+  drawCover(canvas.getContext("2d"), video, w, h);
   return canvas;
 }
 
@@ -1304,16 +1391,173 @@ function flash() {
   el.classList.add("go");
 }
 
-$("shutter").addEventListener("click", async () => {
+async function takePhoto() {
   const frame = captureFrame();
   if (!frame) return toast("La fotocamera non è pronta.");
   flash();
   vibrate(30);
-  const photo = await processImage(frame);
   const mode = state.cameraMode;
   closeCamera(true);
+  if (mode === "story") return openStoryEditor({ canvas: frame, video: null });
+  const photo = await processImage(frame);
   openComposer(photo, mode);
+}
+
+// Shutter: tap = photo, hold = video, slide up = lock.
+$("shutter").addEventListener("contextmenu", (e) => e.preventDefault());
+$("shutter").addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  try { $("shutter").setPointerCapture(e.pointerId); } catch (_) {}
+  rec.pressAt = Date.now();
+  rec.startY = e.clientY;
+  rec.beganWhileRecording = rec.recording;
+  clearTimeout(rec.holdTimer);
+  if (!rec.recording && !rec.starting && videoMime() && state.cameraMode !== "sync") {
+    rec.holdTimer = setTimeout(startVideo, VIDEO_HOLD_MS);
+  }
 });
+$("shutter").addEventListener("pointermove", (e) => {
+  if (!(rec.recording || rec.starting) || rec.locked || rec.beganWhileRecording) return;
+  const dy = Math.min(0, e.clientY - rec.startY);
+  $("lockHint").style.transform = `translateY(${dy * 0.3}px)`;
+  $("lockHint").classList.toggle("near", dy < -40);
+  if (dy < -70) {
+    rec.locked = true;
+    vibrate([20, 30, 20]);
+    $("lockHint").style.transform = "";
+    updateCameraChrome();
+  }
+});
+function shutterReleased() {
+  clearTimeout(rec.holdTimer);
+  $("lockHint").style.transform = "";
+  if (rec.recording) {
+    if (!rec.locked || rec.beganWhileRecording) stopVideo();
+  } else if (rec.starting) {
+    if (!rec.locked) rec.stopWhenStarted = true;
+  } else if (rec.pressAt && Date.now() - rec.pressAt < VIDEO_HOLD_MS + 40 || !videoMime()) {
+    takePhoto();
+  }
+  rec.pressAt = 0;
+}
+$("shutter").addEventListener("pointerup", shutterReleased);
+$("shutter").addEventListener("pointercancel", shutterReleased);
+
+async function startVideo() {
+  if (rec.recording || rec.starting || $("camera").classList.contains("hidden")) return;
+  const video = $("video");
+  if (!video.videoWidth) return;
+  rec.starting = true;
+  rec.stopWhenStarted = false;
+  rec.cancelled = false;
+  vibrate(25);
+  const w = 720, h = Math.round(720 / cameraRatio());
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  // The recording is drawn from the preview, so flipping the camera keeps filming in the same file.
+  const draw = () => {
+    drawCover(ctx, $("video"), w, h);
+    rec.frame = requestAnimationFrame(draw);
+  };
+  draw();
+  let audio = null;
+  try { audio = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); } catch (_) {}
+  if (rec.cancelled) { audio?.getTracks().forEach((t) => t.stop()); cancelAnimationFrame(rec.frame); rec.starting = false; return; }
+  let recorder;
+  try {
+    const out = canvas.captureStream(30);
+    audio?.getAudioTracks().forEach((t) => out.addTrack(t));
+    recorder = new MediaRecorder(out, { mimeType: videoMime(), videoBitsPerSecond: 2500000, audioBitsPerSecond: 96000 });
+  } catch (_) {
+    audio?.getTracks().forEach((t) => t.stop());
+    cancelAnimationFrame(rec.frame);
+    rec.starting = false;
+    return toast("Questo telefono non riesce a registrare video.");
+  }
+  const chunks = [];
+  recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+  rec.done = new Promise((resolve) => { recorder.onstop = () => resolve(new Blob(chunks, { type: "video/mp4" })); });
+  rec.recorder = recorder;
+  rec.audio = audio;
+  rec.canvas = canvas;
+  rec.poster = null;
+  recorder.start(250);
+  rec.startAt = Date.now();
+  setTimeout(() => {
+    if (!rec.canvas) return;
+    const copy = document.createElement("canvas");
+    copy.width = w;
+    copy.height = h;
+    copy.getContext("2d").drawImage(canvas, 0, 0);
+    rec.poster = copy;
+  }, 150);
+  rec.starting = false;
+  rec.recording = true;
+  updateCameraChrome();
+  const ring = $("recRing");
+  rec.ticker = setInterval(() => {
+    const elapsed = (Date.now() - rec.startAt) / 1000;
+    const p = Math.min(1, elapsed / MAX_VIDEO_S);
+    ring.style.strokeDashoffset = String(301.6 * (1 - p));
+    $("recTime").textContent = `0:${String(Math.floor(Math.min(elapsed, MAX_VIDEO_S))).padStart(2, "0")}`;
+    if (elapsed >= MAX_VIDEO_S) stopVideo();
+  }, 50);
+  if (rec.stopWhenStarted) stopVideo();
+}
+
+function resetRecording() {
+  clearInterval(rec.ticker);
+  cancelAnimationFrame(rec.frame);
+  rec.audio?.getTracks().forEach((t) => t.stop());
+  rec.recording = false;
+  rec.starting = false;
+  rec.locked = false;
+  rec.recorder = null;
+  rec.audio = null;
+  $("recRing").style.strokeDashoffset = "301.6";
+  $("recTime").textContent = "0:00";
+}
+
+function cancelVideo() {
+  rec.cancelled = true;
+  try { rec.recorder?.stop(); } catch (_) {}
+  resetRecording();
+  rec.canvas = null;
+  updateCameraChrome();
+}
+
+async function stopVideo() {
+  if (!rec.recording) return;
+  const recorder = rec.recorder;
+  const seconds = (Date.now() - rec.startAt) / 1000;
+  vibrate(25);
+  try { recorder.stop(); } catch (_) {}
+  const done = rec.done;
+  resetRecording();
+  updateCameraChrome();
+  const blob = await done;
+  const poster = rec.poster || rec.canvas;
+  rec.canvas = null;
+  if (seconds < 0.5 || blob.size < 2000 || !poster) return toast("Video troppo corto: tieni premuto un po' di più.");
+  const mode = state.cameraMode;
+  closeCamera(true);
+  if (mode === "story") return openStoryEditor({ canvas: poster, video: blob });
+  const photo = await processImage(poster);
+  photo.video = blob;
+  openComposer(photo, mode);
+}
+
+/** Base64 of a Blob (without the data: prefix). */
+function blobB64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
 
 $("photoInput").addEventListener("change", async (e) => {
   const file = e.target.files?.[0];
@@ -1321,8 +1565,17 @@ $("photoInput").addEventListener("change", async (e) => {
   e.target.value = "";
   if (!file) return;
   try {
-    const photo = await processImage(file);
     closeCamera(true);
+    if (mode === "story") {
+      let bitmap;
+      try { bitmap = await createImageBitmap(file, { imageOrientation: "from-image" }); } catch (_) { bitmap = await createImageBitmap(file); }
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext("2d").drawImage(bitmap, 0, 0);
+      return openStoryEditor({ canvas, video: null });
+    }
+    const photo = await processImage(file);
     openComposer(photo, mode);
   } catch (_) {
     toast("Impossibile leggere la foto.");
@@ -1367,7 +1620,7 @@ function openComposer(photo, mode) {
   let current = mode === "capsule" ? "capsule" : "pin";
   const friendsOptions = state.friends.map((f) => `<option value="${f.id}">Solo ${esc(f.display_name)}</option>`).join("");
   openSheet(`${head("Pubblica")}
-    <div class="preview-wrap"><img class="photo" src="${photo.preview}"></div>
+    <div class="preview-wrap">${photo.video ? `<video class="photo" src="${URL.createObjectURL(photo.video)}" autoplay loop muted playsinline></video><div class="video-badge big">▶</div>` : `<img class="photo" src="${photo.preview}">`}</div>
     <div class="seg"><button data-mode="pin">📍 Pin</button><button data-mode="capsule">💎 Geo-Capsula</button></div>
     <div data-pane="pin"><input id="caption" type="text" maxlength="40" placeholder="Didascalia (opzionale)"></div>
     <div data-pane="capsule" style="display:flex;flex-direction:column;gap:10px">
@@ -1403,6 +1656,7 @@ function openComposer(photo, mode) {
         const pos = (await currentPosition()) || state.myPos;
         if (!pos) throw new Error("Posizione non disponibile, riprova all'aperto.");
         state.myPos = pos;
+        const video = photo.video ? await blobB64(photo.video) : null;
         if (current === "capsule") {
           const secret = root.querySelector("#secret").value.trim();
           if (!secret) throw new Error("Scrivi il messaggio segreto.");
@@ -1411,7 +1665,7 @@ function openComposer(photo, mode) {
             hint: root.querySelector("#hint").value,
             message: secret,
             recipient: root.querySelector("#recipient").value || null,
-            full: photo.full, thumb: photo.thumb,
+            full: photo.full, thumb: photo.thumb, video,
           });
           closeSheet();
           celebrate("💎");
@@ -1419,7 +1673,7 @@ function openComposer(photo, mode) {
         } else {
           const pin = await invoke("publish_pin", {
             lat: pos.lat, lon: pos.lon, caption: root.querySelector("#caption").value,
-            full: photo.full, thumb: photo.thumb, blur: photo.blur, syncSessionId: null,
+            full: photo.full, thumb: photo.thumb, blur: photo.blur, syncSessionId: null, video,
           });
           if (pin?.id) state.pins.unshift(pin);
           closeSheet();
@@ -1452,12 +1706,19 @@ function openPins(pins, index = 0) {
   }).join("");
   const media = pin.sync_session_id
     ? `<div class="split"><img data-full="${esc(pin.image_path)}" src="${esc(pinThumbURL(pin) || "")}">${partner ? `<img data-full="${esc(partner.image_path)}" src="${esc(pinThumbURL(partner) || "")}">` : `<div class="wait">In attesa dell'altra metà…</div>`}<div class="seam"></div><div class="bolt">${ICON.bolt}</div><div class="sign glass">${esc(firstName(pin.author))} <span style="color:var(--emerald2)">×</span> ${esc(partner ? firstName(partner.author) : "…")}</div></div>`
-    : `<img class="photo" data-full="${esc(pin.image_path)}" src="${esc(pinThumbURL(pin) || "")}">`;
+    : pin.video_path
+      ? `<div class="preview-wrap"><img class="photo" data-full="${esc(pin.image_path)}" src="${esc(pinThumbURL(pin) || "")}"><video class="photo overlay-video" data-video="${esc(pin.video_path)}" autoplay loop playsinline></video></div>`
+      : `<img class="photo" data-full="${esc(pin.image_path)}" src="${esc(pinThumbURL(pin) || "")}">`;
+  const hub = [];
+  for (const p of pins) if (!isMine(p) && p.author && !hub.some((h) => h.id === p.author.id)) hub.push(p.author);
   openSheet(`<div class="sheet-head"><div class="author">${avatarHTML(pin.author)}<div>${esc(mine ? "Tu" : pin.author?.display_name)}<small>${esc(ago(pin.created_at))}${pin.place_name ? " · " + esc(pin.place_name) : ""} · scade tra ${esc(until(pin.expires_at))}</small></div></div><button class="close-x" data-close>${ICON.x}</button></div>
     ${media}
     ${pin.caption ? `<p class="caption">${esc(pin.caption)}</p>` : ""}
     ${state.crossPins.has(pin.id) && !mine ? `<p class="muted small" style="margin:0">💫 Sbloccata perché vi siete sfiorati</p>` : ""}
     <div class="reactions">${reactionsHTML()}</div>
+    ${hub.length >= 2
+      ? `<button class="ghost chat-cta" data-act="hub">💬 Apri la chat del gruppo (${hub.length + 1})</button>`
+      : !mine ? `<div class="reply-bar"><input id="pinReply" type="text" maxlength="500" placeholder="Rispondi a ${esc(firstName(pin.author))}…"><button class="send" data-act="reply" aria-label="Invia">${ICON.send}</button></div>` : ""}
     ${pins.length > 1 ? `<div class="row"><button class="ghost grow" data-nav="-1" ${index === 0 ? "disabled" : ""}>‹ Precedente</button><span class="muted small">${index + 1}/${pins.length}</span><button class="ghost grow" data-nav="1" ${index === pins.length - 1 ? "disabled" : ""}>Successiva ›</button></div>` : ""}
     ${mine ? `<button class="danger" data-act="delete">Elimina pin</button>` : ""}`, async (root) => {
     root.querySelectorAll("[data-nav]").forEach((b) => b.addEventListener("click", () => openPins(pins, index + Number(b.dataset.nav))));
@@ -1482,9 +1743,27 @@ function openPins(pins, index = 0) {
         refresh();
       } catch (err) { toast(errorText(err)); }
     });
+    root.querySelector('[data-act="hub"]')?.addEventListener("click", (e) => openHubChat(hub, pin.place_name, e.currentTarget));
+    const sendPinReply = async () => {
+      const input = root.querySelector("#pinReply");
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = "";
+      try {
+        await replyToPin(pin, text);
+        toast(`Risposta inviata a ${firstName(pin.author)} 💬`);
+      } catch (err) { toast(errorText(err)); }
+    };
+    root.querySelector('[data-act="reply"]')?.addEventListener("click", sendPinReply);
+    root.querySelector("#pinReply")?.addEventListener("keydown", (e) => { if (e.key === "Enter") sendPinReply(); });
     const imgs = [...root.querySelectorAll("[data-full]")];
     const urls = await signed("pins", imgs.map((i) => i.dataset.full));
     imgs.forEach((img) => { if (urls[img.dataset.full]) img.src = urls[img.dataset.full]; });
+    const vids = [...root.querySelectorAll("[data-video]")];
+    if (vids.length) {
+      const vurls = await signed("pins", vids.map((v) => v.dataset.video));
+      vids.forEach((v) => { if (vurls[v.dataset.video]) { v.src = vurls[v.dataset.video]; v.play().catch(() => {}); } });
+    }
   });
 }
 
@@ -1519,9 +1798,10 @@ async function openCapsule(cap, justOpened = false) {
     if (opened) {
       const box = root.querySelector("#capsuleContent");
       try {
-        const [urls, secret] = await Promise.all([signed("capsules", [cap.image_path]), invoke("capsule_secret", { id: cap.id }).catch(() => null)]);
+        const [urls, secret] = await Promise.all([signed("capsules", [cap.image_path, cap.video_path].filter(Boolean)), invoke("capsule_secret", { id: cap.id }).catch(() => null)]);
         if (!box.isConnected) return;
-        box.innerHTML = `${urls[cap.image_path] ? `<img class="photo" src="${esc(urls[cap.image_path])}">` : ""}${secret ? `<div class="secret" style="margin-top:12px">🔐 ${esc(secret)}</div>` : ""}`;
+        const vurl = cap.video_path && urls[cap.video_path];
+        box.innerHTML = `${vurl ? `<video class="photo" src="${esc(vurl)}" poster="${esc(urls[cap.image_path] || "")}" autoplay loop playsinline></video>` : urls[cap.image_path] ? `<img class="photo" src="${esc(urls[cap.image_path])}">` : ""}${secret ? `<div class="secret" style="margin-top:12px">🔐 ${esc(secret)}</div>` : ""}`;
       } catch (_) {}
       if (justOpened) celebrate("✨");
     }
@@ -1705,7 +1985,7 @@ async function countdown(s, fireAt) {
     const pos = state.myPos || (await currentPosition());
     if (!pos) throw new Error("Posizione non disponibile.");
     const pin = await invoke("publish_pin", {
-      lat: pos.lat, lon: pos.lon, caption: "", full: photo.full, thumb: photo.thumb, blur: photo.blur, syncSessionId: s.id,
+      lat: pos.lat, lon: pos.lon, caption: "", full: photo.full, thumb: photo.thumb, blur: photo.blur, syncSessionId: s.id, video: null,
     });
     if (pin?.id) state.pins.unshift(pin);
     syncStatus(`⏳ Aspetto la foto di <b>${esc(firstName(s.partner))}</b>…`);
@@ -1903,10 +2183,11 @@ async function renderStory(sum) {
 
 // ───────────── Boot ─────────────
 
-(async function boot() {
+// Waits for every script (social.js too) before starting.
+window.addEventListener("DOMContentLoaded", async function boot() {
   try {
     const userID = await invoke("restore_session");
     if (userID) return await enter();
   } catch (_) {}
   show("auth");
-})();
+});
