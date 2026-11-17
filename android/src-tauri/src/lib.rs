@@ -15,6 +15,7 @@ use tauri::{Manager, State};
 
 mod always;
 mod features;
+mod relays;
 mod social;
 
 const SUPABASE_URL: &str = "https://tqtpkdxeedcjmlhabimg.supabase.co";
@@ -374,6 +375,7 @@ async fn sign_urls(state: State<'_, AppData>, paths: Vec<String>, bucket: Option
         Some("capsules") => "capsules",
         Some("chat") => "chat",
         Some("stories") => "stories",
+        Some("relays") => "relays",
         _ => "pins",
     };
     let mut out = Map::new();
@@ -602,7 +604,10 @@ pub fn run() {
             always::request_always_location,
             always::open_app_settings,
             always::set_always_location,
-            always::enable_notifications
+            always::enable_notifications,
+            relays::fetch_relays,
+            relays::start_relay,
+            relays::run_relay_leg
         ])
         .run(tauri::generate_context!())
         .expect("error while running PinDrop");

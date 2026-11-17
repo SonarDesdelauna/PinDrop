@@ -167,3 +167,38 @@
 .se-colors { display: flex; justify-content: center; gap: 10px; margin-top: auto; }
 .se-colors button { width: 30px; height: 30px; border-radius: 50%; border: 2px solid rgba(255,255,255,.6); }
 .se-colors button.on { transform: scale(1.25); border-color: white; }
+
+/* ───── Staffetta (relay) ───── */
+.seg button.on.relay, .primary.relay, .relay-btn { background: linear-gradient(135deg, #ff7a1a, #ff2e93); color: white; }
+.banner.relay { border-color: rgba(255, 122, 26, .55); cursor: pointer; }
+.banner.relay.low { top: calc(var(--top) + 140px); }
+.relay-emoji { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 22px; background: linear-gradient(135deg, rgba(255,122,26,.25), rgba(255,46,147,.25)); flex-shrink: 0; }
+.relay-running { padding: 12px 14px; border-radius: 16px; font-weight: 800; color: #ff7a1a; background: rgba(255,122,26,.1); text-align: center; }
+.relay-title-row { display: flex; gap: 8px; }
+.relay-title-row select { width: 72px; flex-shrink: 0; font-size: 20px; text-align: center; }
+.relay-title-row input { flex: 1; min-width: 0; }
+.m-relay { display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; }
+.m-relay .frame { position: relative; width: 40px; height: 40px; border-radius: 50%; padding: 3px; background: linear-gradient(135deg, #ff7a1a, #ff2e93); box-shadow: 0 4px 14px rgba(255,90,40,.4); }
+.m-relay.last .frame { width: 54px; height: 54px; }
+.m-relay.broken .frame { background: #9ca3af; box-shadow: none; filter: grayscale(.6); }
+.m-relay .frame img, .m-relay .frame .ph { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; background: white; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+.m-relay .seq { position: absolute; right: -4px; bottom: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: white; color: #ff5a1a; font-weight: 900; font-size: 11px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,.2); }
+.m-relay .tag { padding: 4px 10px; border-radius: 999px; background: white; font-weight: 800; font-size: 12px; white-space: nowrap; max-width: 170px; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 3px 10px rgba(0,0,0,.15); }
+.relay-status { padding: 16px; border-radius: 20px; text-align: center; margin-bottom: 10px; }
+.relay-status .big { font-size: 20px; font-weight: 900; }
+.relay-status .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.relay-status.active { background: linear-gradient(135deg, rgba(255,122,26,.14), rgba(255,46,147,.14)); }
+.relay-status.broken { background: rgba(156,163,175,.16); }
+.relay-status.finished { background: linear-gradient(135deg, rgba(255,46,147,.14), rgba(168,85,247,.14)); }
+.relay-run { width: 100%; margin-bottom: 8px; }
+.relay-h { margin: 14px 0 8px; font-size: 15px; }
+.relay-timeline { display: flex; flex-direction: column; }
+.relay-leg { display: flex; gap: 12px; align-items: center; padding: 8px; border-radius: 16px; cursor: pointer; }
+.relay-leg:active { background: rgba(24,24,27,.05); }
+.relay-thumb { position: relative; width: 64px; height: 64px; flex-shrink: 0; border-radius: 16px; overflow: visible; background: linear-gradient(135deg, #ff7a1a, #ff2e93); }
+.relay-thumb img { width: 64px; height: 64px; border-radius: 16px; object-fit: cover; display: block; }
+.relay-thumb .seq { position: absolute; left: -6px; top: -6px; width: 22px; height: 22px; border-radius: 50%; background: linear-gradient(135deg, #ff7a1a, #ff2e93); color: white; font-weight: 900; font-size: 11px; display: flex; align-items: center; justify-content: center; border: 2px solid white; }
+.relay-leg .who { display: flex; align-items: center; gap: 6px; }
+.relay-leg .who .avatar { width: 22px; height: 22px; font-size: 10px; }
+.relay-leg .cap { font-size: 14px; margin: 2px 0; }
+.relay-gap { margin-left: 34px; padding: 2px 0 2px 12px; border-left: 2px dashed #ff7a1a; color: #ff7a1a; font-size: 11px; font-weight: 800; }

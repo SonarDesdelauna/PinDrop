@@ -57,6 +57,8 @@ const state = {
   dismissedInvites: new Set(),
   dismissedCross: new Set(JSON.parse(localStorage.getItem("dismissedCross") || "[]")),
   cameraMode: "pin",
+  relays: [],
+  relayRun: null,
   facing: "environment",
   layoutKey: "",
 };
@@ -387,6 +389,21 @@ function addOverlayLayers() {
   map.addSource("pd-zones", { type: "geojson", data: emptyCollection() });
   map.addLayer({ id: "pd-zones-fill", type: "fill", source: "pd-zones", minzoom: FAR_ZOOM, paint: { "fill-color": "#f59e0b", "fill-opacity": 0.14 } });
   map.addLayer({ id: "pd-zones-line", type: "line", source: "pd-zones", minzoom: FAR_ZOOM, paint: { "line-color": "#f59e0b", "line-width": 1.6, "line-opacity": 0.85 } });
+  map.addSource("pd-relays", { type: "geojson", data: emptyCollection() });
+  map.addLayer({
+    id: "pd-relays-glow", type: "line", source: "pd-relays",
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": "#ff7a1a", "line-width": 14, "line-opacity": 0.28, "line-blur": 6 },
+  });
+  map.addLayer({
+    id: "pd-relays", type: "line", source: "pd-relays",
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: {
+      "line-color": ["match", ["get", "status"], "broken", "#9ca3af", "finished", "#ff2e93", "#ff7a1a"],
+      "line-width": 4.5,
+      "line-dasharray": [1.2, 1.4],
+    },
+  });
   map.addSource("pd-trail", { type: "geojson", data: emptyCollection() });
   map.addLayer({
     id: "pd-trail-glow", type: "line", source: "pd-trail", minzoom: FAR_ZOOM,
@@ -578,6 +595,7 @@ function layoutKey(L) {
     activeCrossEvents().map((e) => e.id),
     L.places.map((p) => p.id + p.name + p.emoji),
     L.currentPlace?.id,
+    visibleRelays().map((r) => r.id + r.status + r.legs.length + r.legs.map((l) => (state.urls["relays" + l.thumb_path] ? 1 : 0)).join("")),
   ]);
 }
 
@@ -618,6 +636,17 @@ function renderMarkers(force) {
 
   for (const place of L.places) {
     addMarker(element(`<div class="m-place"><div class="emoji">${esc(place.emoji)}</div><div class="tag">${esc(place.name)}</div></div>`, () => openPlacesSheet()), [place.longitude, place.latitude]);
+  }
+
+  for (const relay of visibleRelays()) {
+    const lastSeq = Math.max(...relay.legs.map((l) => l.seq));
+    for (const leg of relay.legs) {
+      const url = state.urls["relays" + leg.thumb_path]?.url;
+      const last = leg.seq === lastSeq;
+      const cls = `m-relay ${relay.status}${last ? " last" : ""}`;
+      const html = `<div class="${cls}"><div class="frame">${url ? `<img src="${esc(url)}">` : `<div class="ph">${esc(relay.emoji)}</div>`}<span class="seq">${leg.seq}</span></div>${last ? `<div class="tag">${esc(relay.emoji)} ${esc(relay.title)}</div>` : ""}</div>`;
+      addMarker(element(html, () => openRelaySheet(relay)), [leg.longitude, leg.latitude], "center");
+    }
   }
 
   for (const ev of activeCrossEvents()) {
@@ -802,6 +831,7 @@ async function refresh() {
       invoke("friend_locations"),
       invoke("online_friends").catch(() => []),
       invoke("fetch_capsules").catch(() => null),
+      loadRelays(),
     ]);
     state.pins = pins || [];
     state.locations = locations || [];
@@ -894,6 +924,7 @@ async function startMain() {
   setInterval(() => loadFriends().catch(() => {}), 60000);
   setInterval(pollInvites, 4000);
   setInterval(updateStatus, 30000);
+  setInterval(updateRelayBanner, 30000);
   startSocial();
   setTimeout(() => syncAlways(true), 4000);
   // Notifications for messages, pins, capsules and stories of friends (Android 13+ asks once).
@@ -1291,7 +1322,7 @@ function stopStream() {
 
 function updateCameraChrome() {
   const mode = state.cameraMode;
-  const labels = { capsule: "💎 Geo-Capsula", sync: "⚡ Sync Shot" };
+  const labels = { capsule: "💎 Geo-Capsula", sync: "⚡ Sync Shot", relay: "🏃 Staffetta" };
   const switchable = mode === "pin" || mode === "story";
   $("camMode").textContent = labels[mode] || "";
   $("camMode").classList.toggle("hidden", switchable || rec.recording);
@@ -1341,7 +1372,10 @@ function closeCamera(silent = false) {
   if (rec.recording || rec.starting) cancelVideo();
   stopStream();
   $("camera").classList.add("hidden");
-  if (!silent) popLayer();
+  if (!silent) {
+    state.relayRun = null;
+    popLayer();
+  }
 }
 
 $("camClose").addEventListener("click", () => closeCamera());
@@ -1418,7 +1452,7 @@ $("shutter").addEventListener("pointerdown", (e) => {
   rec.startY = e.clientY;
   rec.beganWhileRecording = rec.recording;
   clearTimeout(rec.holdTimer);
-  if (!rec.recording && !rec.starting && videoMime() && state.cameraMode !== "sync") {
+  if (!rec.recording && !rec.starting && videoMime() && state.cameraMode !== "sync" && state.cameraMode !== "relay") {
     rec.holdTimer = setTimeout(startVideo, VIDEO_HOLD_MS);
   }
 });
@@ -1623,11 +1657,23 @@ async function processImage(source) {
 // ───────────── Composer: pin or Geo-Capsule ─────────────
 
 function openComposer(photo, mode) {
-  let current = mode === "capsule" ? "capsule" : "pin";
+  const running = mode === "relay" && !photo.video ? state.relayRun : null;
+  state.relayRun = null;
+  let current = mode === "capsule" ? "capsule" : mode === "relay" && !photo.video ? "relay" : "pin";
   const friendsOptions = state.friends.map((f) => `<option value="${f.id}">Solo ${esc(f.display_name)}</option>`).join("");
-  openSheet(`${head("Pubblica")}
+  const candidates = relayCandidates(running);
+  const passOptions = `<option value="">${candidates.length ? "Scegli un amico" : "Prima aggiungi un amico"}</option>`
+    + (running ? '<option value="__finish">🏁 Taglia il traguardo qui</option>' : "")
+    + candidates.map((f) => `<option value="${f.id}">${esc(f.display_name)}</option>`).join("");
+  openSheet(`${head(running ? `${esc(running.emoji)} ${esc(running.title)}` : "Pubblica")}
     <div class="preview-wrap">${photo.video ? `<video class="photo" src="${URL.createObjectURL(photo.video)}" autoplay loop muted playsinline></video><div class="video-badge big">▶</div>` : `<img class="photo" src="${photo.preview}">`}</div>
-    <div class="seg"><button data-mode="pin">📍 Pin</button><button data-mode="capsule">💎 Geo-Capsula</button></div>
+    ${running ? `<div class="relay-running">Tappa ${running.legs.length + 1}: tocca a te 🏃</div>` : `<div class="seg"><button data-mode="pin">📍 Pin</button><button data-mode="capsule">💎 Capsula</button>${photo.video ? "" : '<button data-mode="relay">🏃 Staffetta</button>'}</div>`}
+    <div data-pane="relay" style="display:flex;flex-direction:column;gap:10px">
+      ${running ? "" : `<div class="relay-title-row"><select id="relayEmoji">${RELAY_EMOJI.map((e) => `<option>${e}</option>`).join("")}</select><input id="relayTitle" type="text" maxlength="40" placeholder="Dai un nome (es. Giro delle pizze)"></div>`}
+      <label class="muted small" style="margin:0 0 -4px 4px">Passa il testimone a</label>
+      <select id="relayPass">${passOptions}</select>
+      <input id="relayCaption" type="text" maxlength="40" placeholder="Didascalia (opzionale)">
+    </div>
     <div data-pane="pin"><input id="caption" type="text" maxlength="40" placeholder="Didascalia (opzionale)"></div>
     <div data-pane="capsule" style="display:flex;flex-direction:column;gap:10px">
       <input id="hint" type="text" maxlength="80" placeholder="Indizio visibile a tutti (es. sotto la panchina rossa)">
@@ -1640,17 +1686,26 @@ function openComposer(photo, mode) {
       root.querySelectorAll("[data-mode]").forEach((b) => {
         b.classList.toggle("on", b.dataset.mode === current);
         b.classList.toggle("amber", b.dataset.mode === "capsule");
+        b.classList.toggle("relay", b.dataset.mode === "relay");
       });
       root.querySelector('[data-pane="pin"]').style.display = current === "pin" ? "" : "none";
       root.querySelector('[data-pane="capsule"]').style.display = current === "capsule" ? "flex" : "none";
+      root.querySelector('[data-pane="relay"]').style.display = current === "relay" ? "flex" : "none";
       const btn = root.querySelector("#publishBtn");
-      btn.className = current === "capsule" ? "primary amber" : "primary";
-      btn.textContent = current === "capsule" ? "💎 Nascondi la capsula qui" : "📍 Pubblica qui";
+      const finishing = root.querySelector("#relayPass").value === "__finish";
+      btn.className = current === "capsule" ? "primary amber" : current === "relay" ? "primary relay" : "primary";
+      btn.textContent = current === "capsule" ? "💎 Nascondi la capsula qui"
+        : current === "relay" ? (finishing ? "🏁 Taglia il traguardo" : "🏃 Passa il testimone")
+        : "📍 Pubblica qui";
       root.querySelector("#publishNote").textContent = current === "capsule"
         ? "La capsula resta qui 24 ore. Si apre solo a meno di 20 m."
-        : "Il pin sparisce dopo 6 ore.";
+        : current === "relay"
+          ? (finishing ? "La staffetta finisce qui e tutti vedono il percorso completo."
+            : `Il tuo amico avrà 24 ore per pubblicare la tappa successiva ad almeno ${RELAY_MIN_M} m da qui e passarla avanti. Se il tempo scade la catena si spezza e tutti vedono chi l'ha fatta cadere.`)
+          : "Il pin sparisce dopo 6 ore.";
     };
     root.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => { current = b.dataset.mode; apply(); }));
+    root.querySelector("#relayPass").addEventListener("change", apply);
     apply();
     root.querySelector("#publishBtn").addEventListener("click", async (e) => {
       const btn = e.currentTarget;
@@ -1663,6 +1718,34 @@ function openComposer(photo, mode) {
         if (!pos) throw new Error("Posizione non disponibile, riprova all'aperto.");
         state.myPos = pos;
         const video = photo.video ? await blobB64(photo.video) : null;
+        if (current === "relay") {
+          const pass = root.querySelector("#relayPass").value;
+          const caption = root.querySelector("#relayCaption").value;
+          if (!pass) throw new Error("Scegli a chi passare il testimone.");
+          const friend = state.friends.find((f) => f.id === pass);
+          if (running) {
+            await invoke("run_relay_leg", {
+              relayId: running.id, lat: pos.lat, lon: pos.lon, placeName: null, caption,
+              full: photo.full, thumb: photo.thumb, passTo: pass === "__finish" ? null : pass,
+            }).catch((err) => { throw new Error(relayErrorText(err)); });
+            closeSheet();
+            celebrate(pass === "__finish" ? "🏁" : "🏃");
+            toast(pass === "__finish" ? "Traguardo! 🏁 La staffetta è completa" : `Tappa fatta! Testimone passato a ${firstName(friend)}: ha 24 ore`);
+          } else {
+            const title = root.querySelector("#relayTitle").value.trim();
+            if (!title) throw new Error("Dai un nome alla staffetta.");
+            await invoke("start_relay", {
+              title, emoji: root.querySelector("#relayEmoji").value, lat: pos.lat, lon: pos.lon, placeName: null, caption,
+              full: photo.full, thumb: photo.thumb, passTo: pass,
+            }).catch((err) => { throw new Error(relayErrorText(err)); });
+            closeSheet();
+            celebrate("🏃");
+            toast(`Staffetta partita! Testimone passato a ${firstName(friend)}: ha 24 ore`);
+          }
+          map.flyTo({ center: [pos.lon, pos.lat], zoom: 15, duration: 900 });
+          await loadRelays();
+          return;
+        }
         if (current === "capsule") {
           const secret = root.querySelector("#secret").value.trim();
           if (!secret) throw new Error("Scrivi il messaggio segreto.");
@@ -1694,6 +1777,143 @@ function openComposer(photo, mode) {
       }
     });
   });
+}
+
+
+// ───────────── Staffetta (relay) ─────────────
+
+const RELAY_EMOJI = ["🏃", "🍕", "☕️", "🌅", "🎨", "🍦", "🎸", "🌳", "🏛️", "🐶"];
+const RELAY_MIN_M = 300;
+
+function relayErrorText(err) {
+  const s = String(err?.message || err);
+  if (s.includes("relay_too_close")) return `Spostati di almeno ${RELAY_MIN_M} m dall'ultima tappa`;
+  if (s.includes("relay_already_ran")) return "Questo amico ha già corso una tappa: scegli qualcun altro";
+  if (s.includes("relay_over")) return "Questa staffetta è finita";
+  if (s.includes("relay_not_holder")) return "Il testimone non è più tuo";
+  if (s.includes("relay_not_friend")) return "Puoi passare il testimone solo a un amico";
+  return errorText(err);
+}
+
+function relayLeft(iso) {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return "0 min";
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  return h > 0 ? `${h} h ${m} min` : `${m} min`;
+}
+
+function myBatons() {
+  return state.relays
+    .filter((r) => r.status === "active" && r.holder?.id === state.me?.id)
+    .sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
+}
+
+function visibleRelays() {
+  return state.relays.filter((r) => r.legs?.length && (r.status === "active" || Date.now() - new Date(r.ended_at || 0).getTime() < 86400000));
+}
+
+function relayCandidates(relay) {
+  const ran = new Set((relay?.legs || []).map((l) => l.runner?.id));
+  return state.friends.filter((f) => !ran.has(f.id));
+}
+
+async function loadRelays() {
+  try {
+    const rows = await invoke("fetch_relays");
+    state.relays = Array.isArray(rows) ? rows : [];
+    await signed("relays", state.relays.flatMap((r) => r.legs.map((l) => l.thumb_path)));
+    updateRelayLines();
+    updateRelayBanner();
+    scheduleLayout(true);
+    const open = $("relaySheet");
+    if (open) {
+      const fresh = state.relays.find((r) => r.id === open.dataset.id);
+      if (fresh) renderRelaySheet(fresh);
+    }
+  } catch (_) {}
+}
+
+function updateRelayLines() {
+  if (!mapReady) return;
+  const features = visibleRelays()
+    .filter((r) => r.legs.length >= 2)
+    .map((r) => ({
+      type: "Feature",
+      properties: { status: r.status },
+      geometry: { type: "LineString", coordinates: [...r.legs].sort((a, b) => a.seq - b.seq).map((l) => [l.longitude, l.latitude]) },
+    }));
+  map.getSource("pd-relays")?.setData({ type: "FeatureCollection", features });
+}
+
+function updateRelayBanner() {
+  const banner = $("relayBanner");
+  if (!banner) return;
+  const relay = myBatons()[0];
+  if (!relay) return banner.classList.add("hidden");
+  banner.classList.toggle("low", !$("crossBanner").classList.contains("hidden"));
+  banner.innerHTML = `<div class="relay-emoji">${esc(relay.emoji)}</div><div class="grow"><div class="title">Hai il testimone! 🏃</div><div class="sub">${esc(relay.title)} · ti restano ${esc(relayLeft(relay.deadline))}</div></div><button class="mini relay-btn" data-run>Corri</button>`;
+  banner.classList.remove("hidden");
+  banner.onclick = (e) => {
+    if (e.target.closest("[data-run]")) return runRelayLeg(relay);
+    openRelaySheet(relay);
+  };
+}
+
+function runRelayLeg(relay) {
+  state.relayRun = relay;
+  if (!$("sheet").classList.contains("hidden")) closeSheet();
+  setTimeout(() => openCamera("relay"), 250);
+}
+
+function openRelaySheet(relay) {
+  openSheet(`<div id="relaySheet" data-id="${esc(relay.id)}"></div>`, () => renderRelaySheet(relay));
+  const leg = [...relay.legs].sort((a, b) => b.seq - a.seq)[0];
+  if (leg && map) map.flyTo({ center: [leg.longitude, leg.latitude], zoom: Math.max(map.getZoom(), 14), duration: 800 });
+}
+
+function relayStatusHTML(relay) {
+  if (relay.status === "active") {
+    const mine = relay.holder?.id === state.me.id;
+    return `<div class="relay-status active"><div class="big">${mine ? "Tocca a te!" : `Tocca a ${esc(firstName(relay.holder))}`}</div><div class="sub">Restano ${esc(relayLeft(relay.deadline))}</div></div>
+      ${mine ? '<button class="primary relay-run" data-run>🏃 Corri la tua tappa</button>' : ""}`;
+  }
+  if (relay.status === "broken") {
+    const byMe = relay.broken_by?.id === state.me.id;
+    return `<div class="relay-status broken"><div class="big">💥 La catena si è spezzata</div><div class="sub">${byMe ? "L'hai fatta cadere tu 😬" : relay.broken_by ? `L'ha fatta cadere ${esc(firstName(relay.broken_by))}` : ""}</div></div>`;
+  }
+  const last = [...relay.legs].sort((a, b) => b.seq - a.seq)[0];
+  return `<div class="relay-status finished"><div class="big">🏁 Arrivata al traguardo!</div><div class="sub">${last ? `${esc(firstName(last.runner))} ha tagliato il traguardo` : ""}</div></div>`;
+}
+
+function renderRelaySheet(relay) {
+  const root = $("relaySheet");
+  if (!root) return;
+  const legs = [...relay.legs].sort((a, b) => a.seq - b.seq);
+  let total = 0;
+  for (let i = 1; i < legs.length; i++) total += distance(pinPos(legs[i - 1]), pinPos(legs[i]));
+  const rows = legs.map((l, i) => {
+    const url = state.urls["relays" + l.thumb_path]?.url;
+    const gap = i > 0 ? `<div class="relay-gap">↓ ${esc(distanceText(distance(pinPos(legs[i - 1]), pinPos(l))))}</div>` : "";
+    return `${gap}<div class="relay-leg" data-leg="${esc(l.id)}">
+      <div class="relay-thumb">${url ? `<img src="${esc(url)}">` : ""}<span class="seq">${l.seq}</span></div>
+      <div class="grow"><div class="who">${avatarHTML(l.runner)}<b>${esc(l.runner?.display_name || "")}</b></div>
+      ${l.caption ? `<div class="cap">${esc(l.caption)}</div>` : ""}
+      <div class="muted small">${l.place_name ? esc(l.place_name) + " · " : ""}${esc(ago(l.created_at))}</div></div></div>`;
+  }).join("");
+  root.innerHTML = `${head(`${esc(relay.emoji)} ${esc(relay.title)}`)}
+    <div class="muted small" style="margin:-6px 0 10px">${legs.length} ${legs.length === 1 ? "tappa" : "tappe"} · ${esc(distanceText(total))} · 24 h a tappa</div>
+    ${relayStatusHTML(relay)}
+    <h3 class="relay-h">Il percorso</h3>
+    <div class="relay-timeline">${rows}</div>`;
+  root.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", closeSheet));
+  root.querySelector("[data-run]")?.addEventListener("click", () => runRelayLeg(relay));
+  root.querySelectorAll("[data-leg]").forEach((el) => el.addEventListener("click", () => {
+    const leg = legs.find((l) => l.id === el.dataset.leg);
+    if (leg) map.flyTo({ center: [leg.longitude, leg.latitude], zoom: 16, duration: 700 });
+  }));
+  const missing = legs.filter((l) => !state.urls["relays" + l.thumb_path]?.url).map((l) => l.thumb_path);
+  if (missing.length) signed("relays", missing).then(() => { if ($("relaySheet")?.dataset.id === relay.id && missing.some((p) => state.urls["relays" + p]?.url)) renderRelaySheet(relay); });
 }
 
 // ───────────── Pin viewer ─────────────
