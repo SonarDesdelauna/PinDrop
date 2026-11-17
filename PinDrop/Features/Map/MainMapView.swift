@@ -501,7 +501,7 @@ struct MainMapView: View {
                         HapticManager.shared.tap()
                         appState.isPlacesPresented = true
                     } label: {
-                        PlaceAnnotationView(place: place, isCurrent: false)
+                        PlaceAnnotationView(place: place, isCurrent: false, isMayor: appState.isMayor(of: place))
                     }
                     .buttonStyle(PressableButtonStyle())
                 }

@@ -381,6 +381,14 @@ final class SupabaseDataService: Sendable {
             .value
     }
 
+    /// The public places a user is the Mayor of.
+    func fetchMayorships(of userID: UUID) async throws -> [Mayorship] {
+        try await client
+            .rpc("mayorships_of", params: ["who": userID])
+            .execute()
+            .value
+    }
+
     /// Everyone who has been at a public place, most visits first.
     func fetchPlaceVisitors(_ placeID: UUID) async throws -> [PlaceVisitor] {
         try await client

@@ -215,7 +215,20 @@ struct MyLocationAnnotationView: View {
     }
 }
 
-/// Someone else's public place on the map, with the owner's avatar.
+/// The Mayor's crown, with a soft golden glow.
+struct MayorCrown: View {
+    var size: CGFloat = 16
+
+    var body: some View {
+        Text(verbatim: "👑")
+            .font(.system(size: size))
+            .shadow(color: Theme.mayorGold.opacity(0.8), radius: 4)
+            .accessibilityHidden(true)
+    }
+}
+
+/// Someone else's public place on the map, with the owner's avatar (the Mayor's, with a crown,
+/// once someone has been there the most).
 struct PublicPlaceAnnotationView: View {
     let place: PublicPlace
 
@@ -243,8 +256,19 @@ struct PublicPlaceAnnotationView: View {
                     Circle().strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.2, dash: [3, 3]))
                 }
                 .overlay(alignment: .bottomTrailing) {
-                    AvatarBadge(user: owner, size: 18)
+                    AvatarBadge(user: place.mayor ?? owner, size: 18)
+                        .overlay {
+                            if place.mayor != nil {
+                                Circle().strokeBorder(Theme.mayorGold, lineWidth: 1.5)
+                            }
+                        }
                         .offset(x: 5, y: 3)
+                }
+                .overlay(alignment: .top) {
+                    if place.mayor != nil {
+                        MayorCrown(size: 15)
+                            .offset(y: -12)
+                    }
                 }
             Text(verbatim: place.name)
                 .font(Theme.roundedFixed(9, weight: .bold))
@@ -259,6 +283,7 @@ struct PublicPlaceAnnotationView: View {
         .shadow(color: Color.black.opacity(0.35), radius: 6, x: 0, y: 3)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("publicPlace.a11y \(place.name) \(place.ownerDisplayName)"))
+        .accessibilityValue(place.mayorDisplayName.map { Text("mayor.a11y \($0)") } ?? Text(verbatim: ""))
         .accessibilityAddTraits(.isButton)
     }
 }
@@ -267,6 +292,7 @@ struct PublicPlaceAnnotationView: View {
 struct PlaceAnnotationView: View {
     let place: SavedPlace
     let isCurrent: Bool
+    var isMayor = false
 
     var body: some View {
         VStack(spacing: 3) {
@@ -285,6 +311,12 @@ struct PlaceAnnotationView: View {
                         .padding(.vertical, 2)
                         .background(Capsule().fill(Theme.accentGradient))
                         .offset(x: 8, y: -4)
+                }
+                .overlay(alignment: .top) {
+                    if isMayor {
+                        MayorCrown(size: 17)
+                            .offset(x: -6, y: -14)
+                    }
                 }
             Text(verbatim: place.name)
                 .font(Theme.roundedFixed(10, weight: .bold))

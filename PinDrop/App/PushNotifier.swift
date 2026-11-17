@@ -189,6 +189,11 @@ final class PushNotifier: NSObject, UNUserNotificationCenterDelegate {
             return (name, String(localized: "push.ping.body"))
         case "place_reached":
             return (String(localized: "push.placeReached.title \(detail)"), String(localized: "push.placeReached.body \(name)"))
+        case "mayor_won":
+            let body = event.actorName.map { String(localized: "push.mayorWon.body \($0)") } ?? String(localized: "push.mayorWon.first")
+            return (String(localized: "push.mayorWon.title \(detail)"), body)
+        case "mayor_lost":
+            return (String(localized: "push.mayorLost.title \(name) \(detail)"), String(localized: "push.mayorLost.body"))
         case "best_friend":
             return (String(localized: "push.bestFriend.title"), String(localized: "push.bestFriend.body \(name)"))
         default:

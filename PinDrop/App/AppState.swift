@@ -124,6 +124,8 @@ final class AppState {
     private(set) var presence: PresenceState?
     /// Other people's public places around the user.
     private(set) var publicPlaces: [PublicPlace] = []
+    /// Public places you are the Mayor of (crown on your own places).
+    private(set) var myMayorships: [Mayorship] = []
     private(set) var notifications: [AppNotification] = []
     /// Time spent together, keyed by friend id.
     private(set) var friendTimes: [UUID: FriendTime] = [:]
@@ -762,6 +764,20 @@ final class AppState {
         }
     }
 
+    func reloadMayorships() async {
+        guard sessionPhase == .ready, let fetched = try? await dataService.fetchMayorships(of: currentUser.id) else { return }
+        if fetched != myMayorships {
+            withAnimation(Theme.spring) {
+                myMayorships = fetched
+            }
+        }
+    }
+
+    /// Whether you are the Mayor of one of your own public places.
+    func isMayor(of place: SavedPlace) -> Bool {
+        myMayorships.contains { $0.placeID == place.id }
+    }
+
     func reloadPlaces() async {
         guard sessionPhase == .ready, let fetched = try? await dataService.fetchPlaces() else { return }
         withAnimation(Theme.spring) {
@@ -972,6 +988,7 @@ final class AppState {
         isNotificationsPresented = false
         presentedProfile = nil
         publicPlaces = []
+        myMayorships = []
         notifications = []
         friendTimes = [:]
         trail = []
@@ -1062,7 +1079,8 @@ final class AppState {
         async let heartbeatLoad: Void = sendHeartbeatIfNeeded()
         async let presenceLoad: Void = refreshOnlinePresence()
         async let friendLocationsLoad: Void = reloadFriendLocations()
-        _ = await (notificationsLoad, friendTimesLoad, publicPlacesLoad, heartbeatLoad, presenceLoad, friendLocationsLoad)
+        async let mayorshipsLoad: Void = reloadMayorships()
+        _ = await (notificationsLoad, friendTimesLoad, publicPlacesLoad, heartbeatLoad, presenceLoad, friendLocationsLoad, mayorshipsLoad)
         if userLocation == nil {
             try? await dataService.reportLocation(nil, permission: locationService.permissionName)
         }
