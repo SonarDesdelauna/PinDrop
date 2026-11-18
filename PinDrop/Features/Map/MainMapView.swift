@@ -727,13 +727,6 @@ struct MainMapView: View {
                 )
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
-            if let baton = appState.myBatons.first {
-                RelayBatonBanner(relay: baton) {
-                    HapticManager.shared.tap()
-                    appState.presentedRelay = baton
-                }
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
             Spacer(minLength: 0)
             if let event = appState.activeCrossPath {
                 CrossPathBannerView(
@@ -755,6 +748,21 @@ struct MainMapView: View {
                 }
                 .transition(.scale(scale: 0.8).combined(with: .opacity))
             }
+            if let baton = appState.myBatons.first {
+                // Small pill just above the dock (not in the middle of the map).
+                RelayBatonBanner(
+                    relay: baton,
+                    onOpen: {
+                        HapticManager.shared.tap()
+                        appState.presentedRelay = baton
+                    },
+                    onRun: {
+                        HapticManager.shared.tap()
+                        appState.runLeg(of: baton)
+                    }
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
             locationBanners
             if appState.lockedFriendPinCount > 0 {
                 lockedBanner
@@ -768,7 +776,6 @@ struct MainMapView: View {
         .animation(Theme.spring, value: appState.isUnlocked)
         .animation(Theme.spring, value: currentSpeed == nil)
         .animation(Theme.spring, value: appState.isAlwaysBannerDismissed)
-        .animation(Theme.spring, value: appState.isFriendsLocationBannerDismissed)
         .animation(Theme.spring, value: appState.activeCrossPath)
         .animation(Theme.spring, value: appState.incomingSyncInvite)
         .animation(Theme.spring, value: appState.myBatons.map(\.id))
@@ -995,22 +1002,6 @@ struct MainMapView: View {
                 onDismiss: {
                     withAnimation(Theme.spring) {
                         appState.isAlwaysBannerDismissed = true
-                    }
-                }
-            )
-            .transition(.move(edge: .bottom).combined(with: .opacity))
-        } else if !appState.friendsWithoutAlways.isEmpty, !appState.isFriendsLocationBannerDismissed {
-            LocationWarningBanner(
-                title: "locationBanner.friends.title \(appState.friendsWithoutAlways.count)",
-                message: Text("locationBanner.friends.body"),
-                actionTitle: "locationBanner.friends.action",
-                action: {
-                    HapticManager.shared.tap()
-                    appState.isLocationRemindersPresented = true
-                },
-                onDismiss: {
-                    withAnimation(Theme.spring) {
-                        appState.isFriendsLocationBannerDismissed = true
                     }
                 }
             )

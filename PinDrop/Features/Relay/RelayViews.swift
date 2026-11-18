@@ -96,43 +96,54 @@ struct RelayLine: MapContent {
 
 // MARK: - Baton banner
 
-/// "You have the baton!": shown on the map while it is your turn to run.
+/// "Your turn!": a small pill above the dock while you hold a relay's baton, with a button
+/// that opens the camera straight on your leg.
 struct RelayBatonBanner: View {
     let relay: Relay
     let onOpen: () -> Void
+    let onRun: () -> Void
 
     var body: some View {
-        Button(action: onOpen) {
-            HStack(spacing: 12) {
-                Text(verbatim: "🏃")
-                    .font(.system(size: 24))
-                    .frame(width: 44, height: 44)
-                    .background(Circle().fill(RelayStyle.gradient))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("relay.banner.title")
-                        .font(Theme.text(.subheadline, weight: .heavy))
-                        .foregroundStyle(Theme.textPrimary)
-                    TimelineView(.periodic(from: .now, by: 30)) { context in
-                        Text("relay.banner.body \(relay.emoji) \(relay.title) \(RelayStyle.remaining(until: relay.deadline, now: context.date))")
-                            .font(Theme.text(.caption, weight: .semibold))
-                            .foregroundStyle(Theme.textSecondary)
-                            .lineLimit(1)
+        HStack(spacing: 10) {
+            Button(action: onOpen) {
+                HStack(spacing: 10) {
+                    Text(verbatim: relay.emoji)
+                        .font(.system(size: 17))
+                        .frame(width: 34, height: 34)
+                        .background(Circle().fill(RelayStyle.gradient))
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("relay.status.yourTurn")
+                            .font(Theme.text(.footnote, weight: .heavy))
+                            .foregroundStyle(Theme.textPrimary)
+                        TimelineView(.periodic(from: .now, by: 30)) { context in
+                            Text(verbatim: "\(relay.title) · \(RelayStyle.remaining(until: relay.deadline, now: context.date))")
+                                .font(Theme.text(.caption2, weight: .semibold))
+                                .foregroundStyle(Theme.textSecondary)
+                                .lineLimit(1)
+                        }
                     }
+                    Spacer(minLength: 4)
                 }
-                Spacer(minLength: 6)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Theme.textSecondary)
+                .contentShape(Rectangle())
             }
-            .padding(10)
-            .padding(.trailing, 6)
-            .glassCard(cornerRadius: 22)
-            .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .strokeBorder(RelayStyle.gradient, lineWidth: 1.5)
+            .buttonStyle(.plain)
+            Button(action: onRun) {
+                Label("relay.run.short", systemImage: "camera.fill")
+                    .font(Theme.text(.caption, weight: .heavy))
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(RelayStyle.gradient))
             }
+            .buttonStyle(PressableButtonStyle())
         }
-        .buttonStyle(PressableButtonStyle(pressedScale: 0.98))
+        .padding(6)
+        .padding(.trailing, 2)
+        .glassCapsule()
+        .overlay {
+            Capsule().strokeBorder(RelayStyle.gradient, lineWidth: 1.2)
+        }
+        .frame(maxWidth: 360)
     }
 }
 

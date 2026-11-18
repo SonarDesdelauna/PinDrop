@@ -1677,6 +1677,8 @@ async function processImage(source) {
 function openComposer(photo, mode) {
   const running = mode === "relay" && !photo.video ? state.relayRun : null;
   state.relayRun = null;
+  // Opened from the normal camera while holding a baton: offer to use the photo for the leg.
+  const heldBaton = !running && !photo.video ? myBatons()[0] : null;
   let current = mode === "capsule" ? "capsule" : mode === "relay" && !photo.video ? "relay" : "pin";
   const friendsOptions = state.friends.map((f) => `<option value="${f.id}">Solo ${esc(f.display_name)}</option>`).join("");
   const candidates = relayCandidates(running);
@@ -1685,6 +1687,7 @@ function openComposer(photo, mode) {
     + candidates.map((f) => `<option value="${f.id}">${esc(f.display_name)}</option>`).join("");
   openSheet(`${head(running ? `${esc(running.emoji)} ${esc(running.title)}` : "Pubblica")}
     <div class="preview-wrap">${photo.video ? `<video class="photo" src="${URL.createObjectURL(photo.video)}" autoplay loop muted playsinline></video><div class="video-badge big">▶</div>` : `<img class="photo" src="${photo.preview}">`}</div>
+    ${heldBaton ? `<button class="relay-hint" data-held>${esc(heldBaton.emoji)} <span class="grow">Hai il testimone: usa questa foto per la tua tappa<br><small class="muted">${esc(heldBaton.title)}</small></span> ›</button>` : ""}
     ${running ? `<div class="relay-running">Tappa ${running.legs.length + 1}: tocca a te 🏃</div>` : `<div class="seg"><button data-mode="pin">📍 Pin</button><button data-mode="capsule">💎 Capsula</button>${photo.video ? "" : '<button data-mode="relay">🏃 Staffetta</button>'}</div>`}
     <div data-pane="relay" style="display:flex;flex-direction:column;gap:10px">
       ${running ? "" : `<div class="relay-title-row"><select id="relayEmoji">${RELAY_EMOJI.map((e) => `<option>${e}</option>`).join("")}</select><input id="relayTitle" type="text" maxlength="40" placeholder="Dai un nome (es. Giro delle pizze)"></div>`}
@@ -1724,6 +1727,11 @@ function openComposer(photo, mode) {
     };
     root.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => { current = b.dataset.mode; apply(); }));
     root.querySelector("#relayPass").addEventListener("change", apply);
+    root.querySelector("[data-held]")?.addEventListener("click", () => {
+      state.relayRun = heldBaton;
+      closeSheet();
+      setTimeout(() => openComposer(photo, "relay"), 250);
+    });
     apply();
     root.querySelector("#publishBtn").addEventListener("click", async (e) => {
       const btn = e.currentTarget;
@@ -1869,8 +1877,8 @@ function updateRelayBanner() {
   if (!banner) return;
   const relay = myBatons()[0];
   if (!relay) return banner.classList.add("hidden");
-  banner.classList.toggle("low", !$("crossBanner").classList.contains("hidden"));
-  banner.innerHTML = `<div class="relay-emoji">${esc(relay.emoji)}</div><div class="grow"><div class="title">Hai il testimone! 🏃</div><div class="sub">${esc(relay.title)} · ti restano ${esc(relayLeft(relay.deadline))}</div></div><button class="mini relay-btn" data-run>Corri</button>`;
+  banner.classList.toggle("low", !$("syncPill").classList.contains("hidden"));
+  banner.innerHTML = `<div class="relay-emoji">${esc(relay.emoji)}</div><div class="grow"><div class="title">Tocca a te! 🏃</div><div class="sub">${esc(relay.title)} · ${esc(relayLeft(relay.deadline))}</div></div><button class="mini relay-btn" data-run>📷 Corri</button>`;
   banner.classList.remove("hidden");
   banner.onclick = (e) => {
     if (e.target.closest("[data-run]")) return runRelayLeg(relay);

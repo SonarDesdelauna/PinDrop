@@ -683,8 +683,11 @@ struct ChatRoomView: View {
                     withAnimation(Theme.spring) { proxy.scrollTo("bottom", anchor: .bottom) }
                 }
                 .onTapGesture {
-                    if reactingTo != nil {
-                        withAnimation(Theme.spring) { reactingTo = nil }
+                    if reactingTo != nil || deleting != nil {
+                        withAnimation(Theme.spring) {
+                            reactingTo = nil
+                            deleting = nil
+                        }
                     }
                 }
             }
@@ -744,20 +747,6 @@ struct ChatRoomView: View {
         }
         .sheet(isPresented: $isThemePickerPresented) {
             ChatThemePickerSheet(threadID: threadID)
-        }
-        .confirmationDialog(
-            Text("chat.delete.confirm.title"),
-            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
-            titleVisibility: .visible,
-            presenting: deleting
-        ) { message in
-            Button(role: .destructive) {
-                deleteForEveryone(message)
-            } label: {
-                Text("chat.delete.everyone")
-            }
-        } message: { _ in
-            Text("chat.delete.confirm.message")
         }
         .onDisappear {
             if recorder.isRecording { recorder.cancel() }
@@ -868,6 +857,11 @@ struct ChatRoomView: View {
                                     .offset(y: -50)
                                     .transition(.scale(scale: 0.6, anchor: .bottom).combined(with: .opacity))
                                     .zIndex(2)
+                            } else if deleting?.id == message.id {
+                                deleteConfirm(for: message)
+                                    .offset(y: -50)
+                                    .transition(.scale(scale: 0.6, anchor: .bottom).combined(with: .opacity))
+                                    .zIndex(2)
                             }
                         }
                         .overlay {
@@ -892,7 +886,7 @@ struct ChatRoomView: View {
                 if !isMine { Spacer(minLength: 48) }
             }
         }
-        .zIndex(reactingTo == message.id ? 1 : 0)
+        .zIndex(reactingTo == message.id || deleting?.id == message.id ? 1 : 0)
     }
 
     /// ✓ / ✓✓ under your messages; "Seen" (or who saw it) under the last one.
@@ -1114,6 +1108,38 @@ struct ChatRoomView: View {
         }
     }
 
+    /// "Delete for everyone", right above the message (cancel by tapping anywhere else).
+    private func deleteConfirm(for message: ChatMessage) -> some View {
+        HStack(spacing: 4) {
+            Button {
+                HapticManager.shared.selection()
+                withAnimation(Theme.spring) { deleting = nil }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(width: 38, height: 38)
+            }
+            .buttonStyle(PressableButtonStyle(pressedScale: 0.85))
+            .accessibilityLabel(Text("common.cancel"))
+            Button {
+                HapticManager.shared.tap()
+                deleteForEveryone(message)
+            } label: {
+                Label("chat.delete.everyone", systemImage: "trash.fill")
+                    .font(Theme.text(.subheadline, weight: .bold))
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 16)
+                    .frame(height: 38)
+                    .background(Capsule().fill(Theme.danger))
+            }
+            .buttonStyle(PressableButtonStyle(pressedScale: 0.92))
+        }
+        .padding(4)
+        .glassCapsule()
+        .fixedSize()
+    }
+
     private func reactionPicker(for message: ChatMessage) -> some View {
         HStack(spacing: 6) {
             ForEach(ChatStyle.quickReactions, id: \.self) { emoji in
@@ -1131,8 +1157,10 @@ struct ChatRoomView: View {
                 Divider().frame(height: 26)
                 Button {
                     HapticManager.shared.selection()
-                    withAnimation(Theme.spring) { reactingTo = nil }
-                    deleting = message
+                    withAnimation(Theme.spring) {
+                        reactingTo = nil
+                        deleting = message
+                    }
                 } label: {
                     Image(systemName: "trash.fill")
                         .font(.system(size: 18, weight: .semibold))

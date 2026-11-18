@@ -171,7 +171,13 @@
 /* ───── Staffetta (relay) ───── */
 .seg button.on.relay, .primary.relay, .relay-btn { background: linear-gradient(135deg, #ff7a1a, #ff2e93); color: white; }
 .banner.relay { border-color: rgba(255, 122, 26, .55); cursor: pointer; }
-.banner.relay.low { top: calc(var(--top) + 140px); }
+.banner.relay { top: auto; bottom: calc(var(--bottom) + 98px); left: 14px; right: 14px; max-width: 380px; margin: 0 auto; padding: 6px 6px 6px 8px; border-radius: 999px; gap: 10px; }
+.banner.relay.low { bottom: calc(var(--bottom) + 152px); }
+.banner.relay .relay-emoji { width: 34px; height: 34px; font-size: 17px; }
+.banner.relay .title { font-size: 13px; }
+.banner.relay .sub { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.banner.relay button.mini { border-radius: 999px; }
+.relay-hint { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 16px; border: 1.5px solid rgba(255,122,26,.55); background: rgba(255,122,26,.08); text-align: left; font-weight: 700; font-size: 14px; }
 .relay-emoji { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 22px; background: linear-gradient(135deg, rgba(255,122,26,.25), rgba(255,46,147,.25)); flex-shrink: 0; }
 .relay-running { padding: 12px 14px; border-radius: 16px; font-weight: 800; color: #ff7a1a; background: rgba(255,122,26,.1); text-align: center; }
 .relay-title-row { display: flex; gap: 8px; }

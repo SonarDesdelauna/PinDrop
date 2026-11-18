@@ -44,6 +44,8 @@ struct PostCaptureSheet: View {
     @State private var relayEmoji = Relay.emojiPalette[0]
     @State private var relayPassTo: UserProfile?
     @State private var finishesRelay = false
+    /// Holding a baton but starting a brand new relay instead of running the leg.
+    @State private var startsNewRelay = false
     @FocusState private var isCaptionFocused: Bool
     @FocusState private var isHintFocused: Bool
 
@@ -51,9 +53,16 @@ struct PostCaptureSheet: View {
         mode == .capsule ? GeoCapsule.messageLimit : Self.captionLimit
     }
 
-    /// The relay whose baton you hold, when the camera was opened to run your leg.
+    /// The relay whose baton you hold: the one the camera was opened for, or (from the normal
+    /// camera) the most urgent one you hold, unless you chose to start a new relay.
     private var runningRelay: Relay? {
-        appState.relayRun
+        if let run = appState.relayRun { return run }
+        return startsNewRelay ? nil : appState.myBatons.first
+    }
+
+    /// Opened from the normal camera while you hold a baton.
+    private var heldBaton: Relay? {
+        appState.relayRun == nil ? appState.myBatons.first : nil
     }
 
     private var canDrop: Bool {
@@ -69,8 +78,11 @@ struct PostCaptureSheet: View {
         ScrollView {
             VStack(spacing: 18) {
                 header
-                if runningRelay == nil {
+                if appState.relayRun == nil {
                     modeSelector
+                }
+                if mode != .relay, let baton = heldBaton {
+                    batonReminder(baton)
                 }
                 photo
                 if mode == .capsule {
@@ -110,7 +122,7 @@ struct PostCaptureSheet: View {
             await resolvePlace()
         }
         .onAppear {
-            if runningRelay != nil {
+            if appState.relayRun != nil {
                 mode = .relay
             }
         }
@@ -313,9 +325,58 @@ struct PostCaptureSheet: View {
 
     // MARK: - Relay
 
+    /// "You have the baton: use this photo for your leg" (from the normal camera).
+    private func batonReminder(_ relay: Relay) -> some View {
+        Button {
+            HapticManager.shared.selection()
+            startsNewRelay = false
+            withAnimation(Theme.spring) { mode = .relay }
+        } label: {
+            HStack(spacing: 10) {
+                Text(verbatim: relay.emoji)
+                    .font(.system(size: 18))
+                    .frame(width: 36, height: 36)
+                    .background(Circle().fill(RelayStyle.gradient))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("relay.post.useForLeg")
+                        .font(Theme.text(.subheadline, weight: .bold))
+                        .foregroundStyle(Theme.textPrimary)
+                    Text(verbatim: relay.title)
+                        .font(Theme.text(.caption, weight: .semibold))
+                        .foregroundStyle(RelayStyle.orange)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .padding(12)
+            .glassCard(cornerRadius: Theme.Radius.control)
+            .overlay {
+                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                    .strokeBorder(RelayStyle.gradient, lineWidth: 1.2)
+            }
+        }
+        .buttonStyle(PressableButtonStyle(pressedScale: 0.98))
+    }
+
     @ViewBuilder
     private var relaySection: some View {
         VStack(spacing: 12) {
+            if heldBaton != nil {
+                Button {
+                    HapticManager.shared.selection()
+                    relayPassTo = nil
+                    finishesRelay = false
+                    withAnimation(Theme.spring) { startsNewRelay.toggle() }
+                } label: {
+                    Text(startsNewRelay ? "relay.post.runLegInstead" : "relay.post.startNew")
+                        .font(Theme.text(.footnote, weight: .semibold))
+                        .foregroundStyle(RelayStyle.orange)
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            }
             if let relay = runningRelay {
                 HStack(spacing: 12) {
                     Text(verbatim: relay.emoji)
