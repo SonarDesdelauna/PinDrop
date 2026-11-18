@@ -2,6 +2,26 @@
 // with an Instagram-style editor (effects, texts, stickers). Same backend as the iPhone app.
 
 const CHAT_REACTIONS = ["❤️", "😂", "🔥", "😮", "👍"];
+// Chat themes, like Instagram (same ids and colors as the iPhone app).
+const CHAT_THEMES = [
+  { id: "default", emoji: "💜", name: "PinDrop", bubble: ["#8B5CF6", "#6D28D9"], bg: null },
+  { id: "sunset", emoji: "🌅", name: "Tramonto", bubble: ["#F97316", "#EC4899"], bg: ["#FFE4D6", "#FCE7F3"] },
+  { id: "ocean", emoji: "🌊", name: "Oceano", bubble: ["#06B6D4", "#2563EB"], bg: ["#D9F3FB", "#DBEAFE"] },
+  { id: "aurora", emoji: "🌌", name: "Aurora", bubble: ["#10B981", "#8B5CF6"], bg: ["#D1FAE5", "#EDE9FE"] },
+  { id: "candy", emoji: "🍬", name: "Caramella", bubble: ["#F472B6", "#A78BFA"], bg: ["#FCE7F3", "#F3E8FF"] },
+  { id: "forest", emoji: "🌲", name: "Foresta", bubble: ["#22C55E", "#166534"], bg: ["#DCFCE7", "#ECFCCB"] },
+  { id: "midnight", emoji: "🌙", name: "Mezzanotte", bubble: ["#6366F1", "#312E81"], bg: ["#1E1B4B", "#0B0A1F"], dark: true },
+  { id: "love", emoji: "❤️", name: "Amore", bubble: ["#EF4444", "#F43F5E"], bg: ["#FFE4E6", "#FEE2E2"] },
+  { id: "galaxy", emoji: "🪐", name: "Galassia", bubble: ["#A855F7", "#06B6D4"], bg: ["#2E1065", "#0C0A2A"], dark: true },
+  { id: "lemon", emoji: "🍋", name: "Limonata", bubble: ["#FACC15", "#F97316"], bg: ["#FEF9C3", "#FFEDD5"] },
+];
+function chatTheme(id) { return CHAT_THEMES.find((t) => t.id === id) || CHAT_THEMES[0]; }
+function voiceClock(ms) { const s = Math.max(0, Math.round((ms || 0) / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }
+function waveBars(wave, count = 28) {
+  const digits = (wave || "").split("").map(Number).filter((n) => !isNaN(n));
+  const levels = Array.from({ length: count }, (_, i) => digits.length ? digits[Math.floor(i * digits.length / count)] : 3);
+  return levels.map((l) => `<i style="height:${Math.round(18 + l * 9)}%"></i>`).join("");
+}
 Object.assign(state, {
   threads: [],
   stories: [],
@@ -77,6 +97,8 @@ function messagePreview(m) {
     case "pin_reply": return `${who}↩︎ Pin: ${body}`;
     case "story_reply": return `${who}↩︎ Storia: ${body}`;
     case "location": return `${who}📍 ${m.eta_minutes != null ? `Arrivo tra ${m.eta_minutes} min` : "Posizione"}`;
+    case "voice": return `${who}🎤 Messaggio vocale`;
+    case "theme": return "🎨 Tema della chat cambiato";
     default: return who + body;
   }
 }
@@ -199,7 +221,7 @@ async function openRoom(threadId) {
   let thread = state.threads.find((t) => t.id === threadId);
   if (!thread) { await loadThreads(); thread = state.threads.find((t) => t.id === threadId); }
   if (!thread) return toast("Chat non disponibile.");
-  room = { id: threadId, thread, messages: [], key: "", timer: 0 };
+  room = { id: threadId, thread, messages: [], key: "", timer: 0, reads: {}, pending: new Set() };
   const members = otherMembers(thread);
   const sub = thread.kind === "direct"
     ? (state.online.has(members[0]?.id) ? "● online" : `@${members[0]?.username || ""}`)
@@ -209,16 +231,25 @@ async function openRoom(threadId) {
       <button class="fab plain" data-act="back" aria-label="Indietro">${ICON.back}</button>
       ${threadAvatar(thread)}
       <div class="grow"><b>${esc(threadTitle(thread))}</b><small>${esc(sub)}</small></div>
+      <button class="fab plain" data-act="theme" aria-label="Tema della chat">🎨</button>
       ${thread.kind !== "direct" ? `<button class="mini-btn" data-act="leave">Esci</button>` : ""}
     </header>
     <div id="roomList" class="room-list"><p class="muted small center">Carico…</p></div>
-    <div id="reactPicker" class="react-picker glass hidden">${CHAT_REACTIONS.map((e) => `<button data-react="${e}">${e}</button>`).join("")}</div>
-    <footer class="room-input glass">
+    <div id="reactPicker" class="react-picker glass hidden">${CHAT_REACTIONS.map((e) => `<button data-react="${e}">${e}</button>`).join("")}<button data-del="1" class="react-del hidden" aria-label="Elimina per tutti">🗑️</button></div>
+    <footer class="room-input glass" id="composeBar">
       <button class="fab plain" data-act="photo" aria-label="Foto">📷</button>
       <button class="fab plain" data-act="where" aria-label="Posizione">📍</button>
       <input id="roomText" type="text" maxlength="2000" placeholder="Messaggio…" autocomplete="off">
-      <button class="send" data-act="send" aria-label="Invia">${ICON.send}</button>
+      <button class="send mic" data-act="mic" aria-label="Registra un vocale">🎤</button>
+      <button class="send hidden" data-act="send" aria-label="Invia">${ICON.send}</button>
+    </footer>
+    <footer class="room-input glass rec-bar hidden" id="recBar">
+      <button class="fab plain" data-act="rec-cancel" aria-label="Annulla registrazione">🗑️</button>
+      <span class="rec-dot"></span><b id="recClock">0:00</b>
+      <div class="rec-wave" id="recWave"></div>
+      <button class="send" data-act="rec-send" aria-label="Invia">${ICON.send}</button>
     </footer>`;
+  applyRoomTheme(thread.theme);
   openOverlay("chatRoom");
   el.querySelector('[data-act="back"]').addEventListener("click", leaveOverlay);
   el.querySelector('[data-act="leave"]')?.addEventListener("click", async () => {
@@ -227,6 +258,11 @@ async function openRoom(threadId) {
   });
   el.querySelector('[data-act="send"]').addEventListener("click", sendText);
   $("roomText").addEventListener("keydown", (e) => { if (e.key === "Enter") sendText(); });
+  $("roomText").addEventListener("input", updateComposeButtons);
+  el.querySelector('[data-act="mic"]').addEventListener("click", startVoice);
+  el.querySelector('[data-act="rec-cancel"]').addEventListener("click", () => stopVoice(false));
+  el.querySelector('[data-act="rec-send"]').addEventListener("click", () => stopVoice(true));
+  el.querySelector('[data-act="theme"]').addEventListener("click", openThemePicker);
   el.querySelector('[data-act="photo"]').addEventListener("click", () => $("chatPhotoInput").click());
   el.querySelector('[data-act="where"]').addEventListener("click", sendLocation);
   setupReactions(el);
@@ -236,6 +272,8 @@ async function openRoom(threadId) {
 
 function closeRoom() {
   if (!room) return;
+  if (voiceRec) { clearInterval(voiceRec.timer); voiceRec = null; invoke("cancel_voice").catch(() => {}); }
+  stopVoicePlayback();
   clearInterval(room.timer);
   room = null;
   $("chatRoom").classList.add("hidden");
@@ -249,7 +287,15 @@ async function loadRoom(first) {
   let rows;
   try { rows = await invoke("chat_messages", { threadId: r.id }); } catch (_) { return; }
   if (room !== r) return;
-  const key = rows.map((m) => `${m.id}:${(m.reactions || []).length}`).join("|");
+  try {
+    const members = await api("GET", "chat_members", [["select", "user_id,last_read_at"], ["thread_id", `eq.${r.id}`]]);
+    r.reads = Object.fromEntries((members || []).filter((x) => x.user_id !== state.me.id).map((x) => [x.user_id, x.last_read_at]));
+  } catch (_) {}
+  if (room !== r) return;
+  // A theme change by someone else: pick up the new colors.
+  const lastTheme = [...rows].reverse().find((m) => m.kind === "theme");
+  if (lastTheme && lastTheme.body !== r.thread.theme && !r.themeLocal) { r.thread.theme = lastTheme.body; applyRoomTheme(lastTheme.body); }
+  const key = rows.map((m) => `${m.id}:${(m.reactions || []).length}`).join("|") + "#" + Object.values(r.reads).join(",");
   if (key === r.key && !first) return;
   const hadNew = rows.length && rows[rows.length - 1]?.id !== r.messages[r.messages.length - 1]?.id;
   r.messages = rows;
@@ -262,6 +308,8 @@ function bubbleMedia(m) {
   if (!m.attachment_path) return "";
   const bucket = m.attachment_bucket || "chat";
   if (m.kind === "photo") return `<img class="msg-photo" data-bucket="${bucket}" data-path="${esc(m.attachment_path)}">`;
+  if (m.kind === "voice") return `<div class="msg-voice" data-voice="${esc(m.attachment_path)}" data-bucket="${bucket}" data-ms="${m.duration_ms || 0}">
+      <button class="voice-play" aria-label="Ascolta il vocale">▶</button><div class="voice-wave">${waveBars(m.waveform)}</div><small class="voice-time">${voiceClock(m.duration_ms)}</small></div>`;
   if (m.kind === "pin_reply" || m.kind === "story_reply") {
     const label = m.kind === "pin_reply" ? `↩︎ Risposta al pin${m.place_name ? " · " + esc(m.place_name) : ""}` : "↩︎ Risposta alla storia";
     return `<div class="msg-ref"><img data-bucket="${bucket}" data-path="${esc(m.attachment_path)}"><span>${label}</span></div>`;
@@ -275,8 +323,28 @@ async function renderRoom(scroll) {
   if (!r || !list) return;
   const group = r.thread.kind !== "direct";
   const nearBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 120;
+  const others = otherMembers(r.thread);
+  const lastMine = [...r.messages].reverse().find((m) => m.sender_id === state.me.id && m.kind !== "theme");
+  const seenBy = (m) => others.filter((p) => r.reads[p.id] && new Date(r.reads[p.id]) >= new Date(m.created_at));
+  const ticks = (m) => {
+    if (r.pending.has(m.id)) return `<span class="ticks">🕓</span>`;
+    return seenBy(m).length ? `<span class="ticks seen">✓✓</span>` : `<span class="ticks">✓</span>`;
+  };
+  const receipt = (m) => {
+    if (r.pending.has(m.id)) return "Invio…";
+    const seen = seenBy(m);
+    if (!seen.length) return "Inviato";
+    if (!group) return "Visualizzato";
+    if (seen.length >= others.length) return "Visto da tutti";
+    return `Visto da ${seen.map(firstName).join(", ")}`;
+  };
   list.innerHTML = r.messages.map((m, i) => {
     const mine = m.sender_id === state.me.id;
+    if (m.kind === "theme") {
+      const t = chatTheme(m.body);
+      const who = mine ? "Hai cambiato il tema" : `${esc(firstName((r.thread.participants || []).find((p) => p.id === m.sender_id)))} ha cambiato il tema`;
+      return `<p class="msg-system">${t.emoji} ${who}: <b>${esc(t.name)}</b></p>`;
+    }
     const prev = r.messages[i - 1];
     const sender = (r.thread.participants || []).find((p) => p.id === m.sender_id);
     const showName = group && !mine && prev?.sender_id !== m.sender_id;
@@ -290,7 +358,7 @@ async function renderRoom(scroll) {
     }
     return `<div class="msg${mine ? " mine" : ""}" data-msg="${m.id}">
       ${!mine && group ? (prev?.sender_id === m.sender_id ? '<div class="av-space"></div>' : avatarHTML(sender)) : ""}
-      <div class="bubble-wrap">${showName ? `<small class="who">${esc(firstName(sender))}</small>` : ""}<div class="bubble">${body}</div>${reactions ? `<div class="msg-reacts">${reactions}</div>` : ""}<small class="when">${esc(clockText(m.created_at))}</small></div></div>`;
+      <div class="bubble-wrap">${showName ? `<small class="who">${esc(firstName(sender))}</small>` : ""}<div class="bubble">${body}</div>${reactions ? `<div class="msg-reacts">${reactions}</div>` : ""}<small class="when">${esc(clockText(m.created_at))}${mine ? " " + ticks(m) : ""}</small>${mine && m === lastMine ? `<small class="receipt">${esc(receipt(m))}</small>` : ""}</div></div>`;
   }).join("") || `<p class="muted small center">Scrivi il primo messaggio 👋</p>`;
   if (scroll || nearBottom) list.scrollTop = list.scrollHeight;
   // Images from their buckets (chat photos, pin and story thumbnails).
@@ -304,6 +372,10 @@ async function renderRoom(scroll) {
       img.onload = () => { if (scroll || nearBottom) list.scrollTop = list.scrollHeight; };
     });
   }
+  list.querySelectorAll(".msg-voice").forEach((el) => {
+    if (voicePlaying?.path === el.dataset.voice) markVoice(el, true);
+    el.querySelector(".voice-play").addEventListener("click", (e) => { e.stopPropagation(); toggleVoice(el); });
+  });
   list.querySelectorAll(".msg-loc").forEach((el) => el.addEventListener("click", () => {
     const lat = Number(el.dataset.lat), lon = Number(el.dataset.lon);
     if (!isFinite(lat) || !isFinite(lon)) return;
@@ -323,6 +395,8 @@ function setupReactions(el) {
     clearTimeout(pressTimer);
     pressTimer = setTimeout(() => {
       target = msg.dataset.msg;
+      const tm = room?.messages.find((x) => x.id === target);
+      picker.querySelector("[data-del]").classList.toggle("hidden", !(tm && tm.sender_id === state.me.id && !room.pending.has(tm.id)));
       const rect = msg.querySelector(".bubble").getBoundingClientRect();
       picker.style.top = `${Math.max(70, rect.top - 58)}px`;
       picker.classList.remove("hidden");
@@ -335,6 +409,12 @@ function setupReactions(el) {
   }));
   list.addEventListener("contextmenu", (e) => e.preventDefault());
   el.addEventListener("click", async (e) => {
+    if (e.target.closest("[data-del]")) {
+      picker.classList.add("hidden");
+      const dm = room?.messages.find((x) => x.id === target);
+      if (dm) deleteForEveryone(dm);
+      return;
+    }
     const b = e.target.closest("[data-react]");
     if (!b) {
       if (!e.target.closest("#reactPicker")) picker.classList.add("hidden");
@@ -357,17 +437,179 @@ function setupReactions(el) {
 async function sendMessage(args) {
   const r = room;
   if (!r) return;
+  // Shown right away with a clock, replaced by the saved row.
+  const temp = { id: "tmp-" + Date.now(), sender_id: state.me.id, kind: args.kind || "text", body: args.body || "", created_at: new Date().toISOString(),
+    duration_ms: args.durationMs ?? null, waveform: args.waveform ?? null, latitude: args.lat ?? null, longitude: args.lon ?? null,
+    eta_minutes: args.etaMinutes ?? null, place_name: args.placeName ?? null, reactions: [] };
+  const showTemp = args.kind !== "photo" && args.kind !== "voice";
+  if (showTemp) { r.pending.add(temp.id); r.messages.push(temp); r.key = ""; renderRoom(true); }
   try {
     const row = await invoke("send_message", {
       threadId: r.id, kind: "text", body: "", photo: null, attachmentBucket: null, attachmentPath: null,
-      refId: null, placeName: null, lat: null, lon: null, etaMinutes: null, ...args,
+      refId: null, placeName: null, lat: null, lon: null, etaMinutes: null, voice: null, durationMs: null, waveform: null, ...args,
     });
     if (room === r && row?.id) {
+      r.messages = r.messages.filter((m) => m.id !== temp.id);
       r.messages.push(row);
       r.key = "";
       renderRoom(true);
     }
-  } catch (err) { toast(errorText(err)); }
+  } catch (err) {
+    toast(errorText(err));
+    if (room === r && showTemp) { r.messages = r.messages.filter((m) => m.id !== temp.id); r.key = ""; renderRoom(false); }
+  } finally { r.pending.delete(temp.id); }
+}
+
+function updateComposeButtons() {
+  const has = !!$("roomText")?.value.trim();
+  document.querySelector('#chatRoom [data-act="send"]')?.classList.toggle("hidden", !has);
+  document.querySelector('#chatRoom [data-act="mic"]')?.classList.toggle("hidden", has);
+}
+
+// ───────────── Chat themes ─────────────
+
+function applyRoomTheme(id) {
+  const t = chatTheme(id);
+  const el = $("chatRoom");
+  if (!el) return;
+  el.style.setProperty("--bubble", `linear-gradient(135deg, ${t.bubble[0]}, ${t.bubble[1]})`);
+  el.style.setProperty("--accent", t.bubble[0]);
+  el.style.background = t.bg ? `linear-gradient(180deg, ${t.bg[0]}, ${t.bg[1]})` : "";
+  el.classList.toggle("dark-theme", !!t.dark);
+}
+
+function openThemePicker() {
+  const r = room;
+  if (!r) return;
+  const current = r.thread.theme || "default";
+  openSheet(`${head("Tema della chat")}
+    <div class="theme-grid">${CHAT_THEMES.map((t) => `<button class="theme-cell${t.id === current ? " on" : ""}" data-theme="${t.id}">
+      <span class="theme-swatch" style="background:${t.bg ? `linear-gradient(180deg, ${t.bg[0]}, ${t.bg[1]})` : "linear-gradient(180deg,#f3f3f8,#e9e9f1)"}">
+        <i style="background:linear-gradient(135deg, ${t.bubble[0]}, ${t.bubble[1]})"></i><i class="other"></i></span>
+      <b>${t.emoji} ${esc(t.name)}</b></button>`).join("")}</div>`, (root) => {
+    root.querySelectorAll("[data-theme]").forEach((b) => b.addEventListener("click", async () => {
+      const id = b.dataset.theme;
+      closeSheet();
+      if (id === (r.thread.theme || "default")) return;
+      const before = r.thread.theme;
+      r.thread.theme = id;
+      r.themeLocal = true;
+      applyRoomTheme(id);
+      vibrate(15);
+      try {
+        await invoke("api", { method: "POST", path: "/rest/v1/rpc/set_chat_theme", query: [], body: { thread: r.id, theme: id }, prefer: null });
+        r.key = "";
+        await loadRoom(false);
+      } catch (err) {
+        r.thread.theme = before;
+        applyRoomTheme(before);
+        toast(errorText(err));
+      } finally { r.themeLocal = false; }
+    }));
+  });
+}
+
+// ───────────── Delete for everyone ─────────────
+
+async function deleteForEveryone(m) {
+  if (!confirm("Eliminare il messaggio per tutti?\nSparirà per tutti nella chat.")) return;
+  const r = room;
+  if (!r) return;
+  r.messages = r.messages.filter((x) => x.id !== m.id);
+  r.key = "";
+  renderRoom(false);
+  try {
+    await invoke("delete_chat_message", { id: m.id, path: m.attachment_bucket === "chat" ? m.attachment_path : null });
+  } catch (err) {
+    toast("Impossibile eliminare il messaggio");
+  }
+  if (room === r) { r.key = ""; loadRoom(false); }
+}
+
+// ───────────── Voice messages ─────────────
+
+let voiceRec = null;
+
+async function startVoice() {
+  if (voiceRec || !room) return;
+  if (!(await invoke("mic_status").catch(() => false))) {
+    await invoke("request_mic").catch(() => {});
+    for (let i = 0; i < 40; i++) {
+      await new Promise((res) => setTimeout(res, 500));
+      if (await invoke("mic_status").catch(() => false)) break;
+    }
+    if (!(await invoke("mic_status").catch(() => false))) return toast("Consenti il microfono per mandare vocali");
+  }
+  stopVoicePlayback();
+  if (!(await invoke("start_voice").catch(() => false))) return toast("Impossibile usare il microfono");
+  vibrate(20);
+  voiceRec = { levels: [], timer: 0 };
+  $("composeBar").classList.add("hidden");
+  $("recBar").classList.remove("hidden");
+  $("recWave").innerHTML = "";
+  $("recClock").textContent = "0:00";
+  const rec = voiceRec;
+  rec.timer = setInterval(async () => {
+    const v = await invoke("voice_level").catch(() => null);
+    if (voiceRec !== rec || !v) return;
+    $("recClock").textContent = voiceClock(v.ms);
+    rec.levels.push(v.level || 0);
+    $("recWave").innerHTML = rec.levels.slice(-34).map((l) => `<i style="height:${Math.round(18 + l * 9)}%"></i>`).join("");
+    if (v.ms >= 180000) stopVoice(true);
+  }, 150);
+}
+
+async function stopVoice(send) {
+  const rec = voiceRec;
+  if (!rec) return;
+  voiceRec = null;
+  clearInterval(rec.timer);
+  $("recBar")?.classList.add("hidden");
+  $("composeBar")?.classList.remove("hidden");
+  if (!send) { invoke("cancel_voice").catch(() => {}); return; }
+  const result = await invoke("stop_voice").catch(() => null);
+  if (!result?.data) return toast("Tieni premuto più a lungo per registrare");
+  vibrate(10);
+  toast("Invio il vocale…");
+  await sendMessage({ kind: "voice", voice: result.data, durationMs: result.durationMs, waveform: result.waveform });
+}
+
+let voicePlaying = null;
+const voiceAudio = new Audio();
+voiceAudio.addEventListener("timeupdate", () => {
+  const el = voicePlaying && document.querySelector(`.msg-voice[data-voice="${CSS.escape(voicePlaying.path)}"]`);
+  if (!el) return;
+  const total = Number(el.dataset.ms) || (voiceAudio.duration * 1000) || 1;
+  const progress = Math.min(1, voiceAudio.currentTime * 1000 / total);
+  el.style.setProperty("--progress", `${progress * 100}%`);
+  el.querySelector(".voice-time").textContent = voiceClock(total - voiceAudio.currentTime * 1000);
+});
+voiceAudio.addEventListener("ended", stopVoicePlayback);
+
+function markVoice(el, on) {
+  el.classList.toggle("playing", on);
+  el.querySelector(".voice-play").textContent = on ? "❚❚" : "▶";
+  if (!on) { el.style.setProperty("--progress", "0%"); el.querySelector(".voice-time").textContent = voiceClock(Number(el.dataset.ms)); }
+}
+
+function stopVoicePlayback() {
+  voiceAudio.pause();
+  const path = voicePlaying?.path;
+  voicePlaying = null;
+  const el = path && document.querySelector(`.msg-voice[data-voice="${CSS.escape(path)}"]`);
+  if (el) markVoice(el, false);
+}
+
+async function toggleVoice(el) {
+  const path = el.dataset.voice;
+  if (voicePlaying?.path === path) return stopVoicePlayback();
+  stopVoicePlayback();
+  const urls = await signed(el.dataset.bucket || "chat", [path]);
+  if (!urls[path]) return toast("Vocale non disponibile");
+  voicePlaying = { path };
+  voiceAudio.src = urls[path];
+  markVoice(el, true);
+  try { await voiceAudio.play(); } catch (_) { stopVoicePlayback(); toast("Impossibile riprodurre il vocale"); }
 }
 
 function sendText() {
@@ -375,6 +617,7 @@ function sendText() {
   const body = input.value.trim();
   if (!body) return;
   input.value = "";
+  updateComposeButtons();
   vibrate(10);
   sendMessage({ kind: "text", body });
 }

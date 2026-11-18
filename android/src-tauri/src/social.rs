@@ -7,7 +7,7 @@ use reqwest::Method;
 use serde_json::{json, Value};
 use tauri::State;
 
-const MESSAGE_SELECT: &str = "id,thread_id,sender_id,kind,body,attachment_bucket,attachment_path,ref_id,place_name,latitude,longitude,eta_minutes,created_at,reactions:chat_reactions(user_id,emoji)";
+const MESSAGE_SELECT: &str = "id,thread_id,sender_id,kind,body,attachment_bucket,attachment_path,ref_id,place_name,latitude,longitude,eta_minutes,duration_ms,waveform,created_at,reactions:chat_reactions(user_id,emoji)";
 const STORY_SELECT: &str = "id,image_path,video_path,overlay_text,overlay_y,location_tag,created_at,expires_at,author:profiles!stories_author_id_fkey(*),views:story_views(viewer_id,liked,viewed_at,viewer:profiles!story_views_viewer_id_fkey(*))";
 
 fn clip(text: &str, max: usize) -> String {
@@ -95,6 +95,9 @@ pub async fn send_message(
     lat: Option<f64>,
     lon: Option<f64>,
     eta_minutes: Option<i64>,
+    voice: Option<String>,
+    duration_ms: Option<i64>,
+    waveform: Option<String>,
 ) -> Res<Value> {
     let session = state.token().await?;
     let id = uuid::Uuid::new_v4().to_string();
@@ -107,6 +110,13 @@ pub async fn send_message(
         bucket = Some("chat".into());
         path = Some(photo_path);
     }
+    if let Some(voice) = voice.filter(|v| !v.is_empty()) {
+        let voice_path = format!("{}/{id}.m4a", thread_id.to_lowercase());
+        let bytes = B64.decode(voice).map_err(|e| e.to_string())?;
+        state.upload_as(&session, "chat", &voice_path, bytes, "audio/mp4").await?;
+        bucket = Some("chat".into());
+        path = Some(voice_path);
+    }
     let row = json!({
         "id": id,
         "thread_id": thread_id,
@@ -118,7 +128,9 @@ pub async fn send_message(
         "place_name": place_name.map(|p| clip(&p, 120)),
         "latitude": lat,
         "longitude": lon,
-        "eta_minutes": eta_minutes
+        "eta_minutes": eta_minutes,
+        "duration_ms": duration_ms.map(|d| d.clamp(0, 600_000)),
+        "waveform": waveform.map(|w| w.chars().filter(|c| c.is_ascii_digit()).take(64).collect::<String>())
     });
     state
         .rest(

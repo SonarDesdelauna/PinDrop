@@ -154,3 +154,65 @@ pub fn update_widget(data: Value) -> Res<()> {
     let text = json!(data).to_string();
     call("updateWidget", &[&text], false, false).map(|_| ())
 }
+
+// ───── Voice messages ─────
+
+#[tauri::command]
+pub fn mic_status() -> bool {
+    matches!(call("hasMic", &[], false, true), Ok(Some(v)) if v == "1")
+}
+
+#[tauri::command]
+pub fn request_mic() -> Res<()> {
+    call("requestMic", &[], false, false).map(|_| ())
+}
+
+#[tauri::command]
+pub fn start_voice() -> bool {
+    matches!(call("startRecording", &[], false, true), Ok(Some(v)) if v == "1")
+}
+
+/// { level 0–9, ms, recording }
+#[tauri::command]
+pub fn voice_level() -> Value {
+    call("recordingLevel", &[], true, false)
+        .ok()
+        .flatten()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or(Value::Null)
+}
+
+/// { data (base64 m4a), durationMs, waveform } or null when it was too short.
+#[tauri::command]
+pub fn stop_voice() -> Value {
+    call("stopRecording", &[], true, false)
+        .ok()
+        .flatten()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or(Value::Null)
+}
+
+#[tauri::command]
+pub fn cancel_voice() {
+    let _ = call("cancelRecording", &[], false, false);
+}
+
+/// Deletes one of my messages for everyone, with its photo or voice file.
+#[tauri::command]
+pub async fn delete_chat_message(state: State<'_, AppData>, id: String, path: Option<String>) -> Res<()> {
+    let session = state.token().await?;
+    state
+        .rest(
+            Method::DELETE,
+            "/rest/v1/chat_messages",
+            &[("id", format!("eq.{id}")), ("sender_id", format!("eq.{}", session.user_id))],
+            None,
+            None,
+        )
+        .await?;
+    if let Some(path) = path.filter(|p| !p.is_empty() && !p.contains("..")) {
+        let request = state.authed(Method::DELETE, &format!("/storage/v1/object/chat/{path}"), &session);
+        let _ = finish(request).await;
+    }
+    Ok(())
+}

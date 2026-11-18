@@ -617,7 +617,14 @@ pub fn run() {
             extra::read_contacts,
             extra::share_text,
             extra::send_sms,
-            extra::update_widget
+            extra::update_widget,
+            extra::mic_status,
+            extra::request_mic,
+            extra::start_voice,
+            extra::voice_level,
+            extra::stop_voice,
+            extra::cancel_voice,
+            extra::delete_chat_message
         ])
         .run(tauri::generate_context!())
         .expect("error while running PinDrop");

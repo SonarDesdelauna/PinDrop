@@ -149,6 +149,8 @@ fn push_text(row: &Value) -> Option<(String, String)> {
             let content = match sub.as_str() {
                 "photo" => "📷 Foto".to_string(),
                 "location" => "📍 Ha condiviso la posizione".to_string(),
+                "voice" => "🎤 Messaggio vocale".to_string(),
+                "theme" => "🎨 Ha cambiato il tema della chat".to_string(),
                 "pin_reply" => if detail.is_empty() { "Ha risposto al tuo pin".to_string() } else { format!("Ha risposto al tuo pin: {detail}") },
                 "story_reply" => if detail.is_empty() { "Ha risposto alla tua storia".to_string() } else { format!("Ha risposto alla tua storia: {detail}") },
                 _ => detail.clone(),
