@@ -45,6 +45,7 @@ struct PinDropApp: App {
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:
+                locationService.setBackgroundKeepAlive(false)
                 appState.resetLocationBanners()
                 Task { await appState.refresh() }
                 if appState.sessionPhase == .ready {
@@ -53,7 +54,13 @@ struct PinDropApp: App {
             case .background:
                 appState.pruneExpiredPins()
                 appState.goOffline()
-                appState.push.stopPolling()
+                if appState.sessionPhase == .ready, locationService.hasAlwaysPermission {
+                    // Stay awake (low-power location) so notifications arrive right away.
+                    locationService.setBackgroundKeepAlive(true)
+                    appState.push.startPolling(every: .seconds(20))
+                } else {
+                    appState.push.stopPolling()
+                }
                 appState.push.scheduleBackgroundRefresh()
             default:
                 break

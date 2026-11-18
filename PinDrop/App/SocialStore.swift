@@ -8,6 +8,10 @@ import UIKit
 final class SocialStore {
     private(set) var threads: [ChatThread] = []
     private(set) var messages: [UUID: [ChatMessage]] = [:]
+    /// thread → member → when they last read it (seen receipts).
+    private(set) var readStates: [UUID: [UUID: Date]] = [:]
+    /// Messages still on their way to the server.
+    private(set) var pendingMessageIDs: Set<UUID> = []
     private(set) var storyRings: [UserStoryRing] = []
     private(set) var myStories: [StoryItem] = []
     /// Downloaded images keyed by "bucket/path".
@@ -49,6 +53,12 @@ final class SocialStore {
 
     func isDemoThread(_ id: UUID) -> Bool {
         demoThreads.contains { $0.id == id }
+    }
+
+    /// Raw bytes of a downloaded attachment (voice messages).
+    func data(for key: String?) -> Data? {
+        guard let key else { return nil }
+        return images[key]
     }
 
     func image(for key: String?) -> UIImage? {
@@ -177,6 +187,49 @@ final class SocialStore {
         }
     }
 
+    func loadReadStates(threadID: UUID) async {
+        guard !isDemoThread(threadID), let states = try? await dataService.fetchReadStates(threadID: threadID) else { return }
+        if states != readStates[threadID] {
+            readStates[threadID] = states
+        }
+    }
+
+    /// Deletes one of your messages for everyone.
+    func deleteForEveryone(_ message: ChatMessage) async throws {
+        let threadID = message.threadID
+        let before = messages[threadID]
+        HapticManager.shared.tap()
+        withAnimation(Theme.spring) {
+            messages[threadID]?.removeAll { $0.id == message.id }
+        }
+        if isDemoThread(threadID) {
+            demoMessages[threadID]?.removeAll { $0.id == message.id }
+            return
+        }
+        do {
+            try await dataService.deleteMessage(message)
+            if let userID { await refresh(userID: userID) }
+        } catch {
+            messages[threadID] = before
+            HapticManager.shared.error()
+            throw error
+        }
+    }
+
+    func setTheme(_ theme: String, threadID: UUID) async throws {
+        HapticManager.shared.selection()
+        if let index = serverThreads.firstIndex(where: { $0.id == threadID }) {
+            serverThreads[index].theme = theme
+        }
+        if let index = demoThreads.firstIndex(where: { $0.id == threadID }) {
+            demoThreads[index].theme = theme
+        }
+        rebuild()
+        guard !isDemoThread(threadID) else { return }
+        try await dataService.setChatTheme(theme, threadID: threadID)
+        await loadMessages(threadID: threadID)
+    }
+
     func markRead(threadID: UUID) async {
         if let index = threads.firstIndex(where: { $0.id == threadID }), threads[index].unreadCount > 0 {
             threads[index].unreadCount = 0
@@ -268,17 +321,21 @@ final class SocialStore {
             senderID: userID,
             kind: outgoing.kind,
             body: outgoing.body,
-            attachmentBucket: outgoing.photo != nil ? "local" : outgoing.attachmentBucket,
-            attachmentPath: outgoing.photo != nil ? UUID().uuidString : outgoing.attachmentPath,
+            attachmentBucket: (outgoing.photo ?? outgoing.voice) != nil ? "local" : outgoing.attachmentBucket,
+            attachmentPath: (outgoing.photo ?? outgoing.voice) != nil ? UUID().uuidString : outgoing.attachmentPath,
             refID: outgoing.refID,
             placeName: outgoing.placeName,
             latitude: outgoing.latitude,
             longitude: outgoing.longitude,
-            etaMinutes: outgoing.etaMinutes
+            etaMinutes: outgoing.etaMinutes,
+            durationMs: outgoing.durationMs,
+            waveform: outgoing.waveform
         )
-        if let photo = outgoing.photo, let key = local.attachmentKey {
+        if let photo = outgoing.photo ?? outgoing.voice, let key = local.attachmentKey {
             images[key] = photo
         }
+        pendingMessageIDs.insert(local.id)
+        defer { pendingMessageIDs.remove(local.id) }
         withAnimation(Theme.spring) {
             messages[threadID, default: []].append(local)
         }
@@ -291,7 +348,7 @@ final class SocialStore {
         }
         do {
             let saved = try await dataService.sendMessage(outgoing, to: threadID)
-            if let photo = outgoing.photo, let key = saved.attachmentKey {
+            if let photo = outgoing.photo ?? outgoing.voice, let key = saved.attachmentKey {
                 images[key] = photo
             }
             if var list = messages[threadID], let index = list.firstIndex(where: { $0.id == local.id }) {

@@ -232,6 +232,11 @@ final class AppState {
             Task {
                 await push.check()
             }
+            // Relaunched by iOS (or already in the background): keep running and checking.
+            if UIApplication.shared.applicationState == .background, locationService.hasAlwaysPermission {
+                locationService.setBackgroundKeepAlive(true)
+                push.startPolling(every: .seconds(20))
+            }
         }
         push.onOpen = { [weak self] route in
             self?.openPushRoute(route)

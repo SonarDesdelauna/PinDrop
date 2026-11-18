@@ -40,6 +40,9 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     /// for a significant location change), to share them with friends.
     @ObservationIgnored var backgroundFixHandler: (@MainActor (GeoPoint) -> Void)?
     @ObservationIgnored private var isMonitoringSignificantChanges = false
+    /// A low-power location session kept in the background so iOS doesn't suspend PinDrop
+    /// (it keeps checking for new messages and posts the notifications right away).
+    @ObservationIgnored private(set) var isKeepingAlive = false
     private static let askedAlwaysKey = "pindrop.location.askedAlways"
 
     private let manager = CLLocationManager()
@@ -98,6 +101,7 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
                 manager.startMonitoringSignificantLocationChanges()
             }
         } else if isMonitoringSignificantChanges {
+            setBackgroundKeepAlive(false)
             isMonitoringSignificantChanges = false
             manager.stopMonitoringSignificantLocationChanges()
             manager.allowsBackgroundLocationUpdates = false
@@ -175,9 +179,44 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         isLiveUpdating = false
         speed = nil
         course = nil
+        if isKeepingAlive {
+            applyKeepAliveAccuracy()
+            return
+        }
         manager.stopUpdatingLocation()
         manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
         manager.distanceFilter = kCLDistanceFilterNone
+    }
+
+    // MARK: - Background keep-alive ("Always" only)
+
+    /// In the background, with "Always": coarse fixes (cell/Wi-Fi, about every kilometre) keep
+    /// the app running so new messages arrive as notifications within seconds.
+    func setBackgroundKeepAlive(_ on: Bool) {
+        if on {
+            guard hasAlwaysPermission, !isKeepingAlive else { return }
+            isKeepingAlive = true
+            manager.allowsBackgroundLocationUpdates = true
+            manager.showsBackgroundLocationIndicator = false
+            manager.pausesLocationUpdatesAutomatically = false
+            if !isLiveUpdating {
+                applyKeepAliveAccuracy()
+                manager.startUpdatingLocation()
+            }
+        } else {
+            guard isKeepingAlive else { return }
+            isKeepingAlive = false
+            if !isLiveUpdating {
+                manager.stopUpdatingLocation()
+                manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+                manager.distanceFilter = kCLDistanceFilterNone
+            }
+        }
+    }
+
+    private func applyKeepAliveAccuracy() {
+        manager.desiredAccuracy = kCLLocationAccuracyThreeKilometers
+        manager.distanceFilter = 1_000
     }
 
     private func applyMotion(speed rawSpeed: Double, course rawCourse: Double) {

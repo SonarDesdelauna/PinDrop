@@ -375,6 +375,10 @@ enum ChatMessageText {
                 return "📍 " + String(localized: "chat.location.eta \(eta)")
             }
             return "📍 " + (place.isEmpty ? String(localized: "chat.location.here") : place)
+        case let .voice(_, durationMs, _):
+            return String(localized: "chat.voice.preview") + " · " + VoiceFormat.clock(TimeInterval(durationMs) / 1000)
+        case .themeChange:
+            return String(localized: "chat.theme.preview")
         }
     }
 }
@@ -615,12 +619,35 @@ struct ChatRoomView: View {
     @State private var isCameraPresented = false
     @State private var isSending = false
     @State private var burst: UUID?
+    @State private var recorder = VoiceRecorder()
+    @State private var isThemePickerPresented = false
+    @State private var deleting: ChatMessage?
     @FocusState private var isInputFocused: Bool
 
     private var social: SocialStore { appState.social }
     private var me: UUID { appState.currentUser.id }
     private var thread: ChatThread? { social.thread(threadID) }
     private var messages: [ChatMessage] { social.messages[threadID] ?? [] }
+    private var theme: ChatTheme { ChatTheme.named(thread?.theme) }
+    private var readStates: [UUID: Date] { social.readStates[threadID] ?? [:] }
+
+    /// The others who have read up to this message.
+    private func seenBy(_ message: ChatMessage) -> [UserProfile] {
+        others.filter { person in
+            guard let read = readStates[person.id] else { return false }
+            return read >= message.sentAt
+        }
+    }
+
+    private func tickStatus(_ message: ChatMessage) -> MessageTicks.Status {
+        if social.pendingMessageIDs.contains(message.id) || message.attachmentBucket == "local" { return .sending }
+        let seen = seenBy(message)
+        return !others.isEmpty && seen.count == others.count ? .seen : .sent
+    }
+
+    private var lastOwnMessageID: UUID? {
+        messages.last { $0.senderID == me && $0.kind != .theme }?.id
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -663,11 +690,22 @@ struct ChatRoomView: View {
             }
             inputBar
         }
-        .background(Theme.obsidian.ignoresSafeArea())
+        .background(theme.backgroundView.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 header
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    HapticManager.shared.tap()
+                    isThemePickerPresented = true
+                } label: {
+                    Image(systemName: "paintpalette.fill")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(theme.accent)
+                }
+                .accessibilityLabel(Text("chat.theme.title"))
             }
             ToolbarItem(placement: .topBarTrailing) {
                 if let point = focusPoint {
@@ -686,11 +724,13 @@ struct ChatRoomView: View {
         .task {
             await social.loadMessages(threadID: threadID)
             await social.markRead(threadID: threadID)
+            await social.loadReadStates(threadID: threadID)
             // Light polling while the conversation is open.
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(3))
                 guard !Task.isCancelled else { return }
                 await social.loadMessages(threadID: threadID)
+                await social.loadReadStates(threadID: threadID)
                 if (social.thread(threadID)?.unreadCount ?? 0) > 0 || messages.last?.senderID != me {
                     await social.markRead(threadID: threadID)
                 }
@@ -701,6 +741,27 @@ struct ChatRoomView: View {
                 sendPhoto(image)
             }
             .ignoresSafeArea()
+        }
+        .sheet(isPresented: $isThemePickerPresented) {
+            ChatThemePickerSheet(threadID: threadID)
+        }
+        .confirmationDialog(
+            Text("chat.delete.confirm.title"),
+            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+            titleVisibility: .visible,
+            presenting: deleting
+        ) { message in
+            Button(role: .destructive) {
+                deleteForEveryone(message)
+            } label: {
+                Text("chat.delete.everyone")
+            }
+        } message: { _ in
+            Text("chat.delete.confirm.message")
+        }
+        .onDisappear {
+            if recorder.isRecording { recorder.cancel() }
+            VoicePlayer.shared.stop()
         }
     }
 
@@ -749,6 +810,29 @@ struct ChatRoomView: View {
 
     @ViewBuilder
     private func bubbleRow(_ message: ChatMessage, previous: ChatMessage?) -> some View {
+        if case let .themeChange(themeID) = message.content {
+            themeChangeRow(message, themeID: themeID)
+        } else {
+            messageRow(message, previous: previous)
+        }
+    }
+
+    private func themeChangeRow(_ message: ChatMessage, themeID: String) -> some View {
+        let chosen = ChatTheme.named(themeID)
+        let label = "\(chosen.emoji) \(chosen.name)"
+        let who = thread?.participants.first { $0.id == message.senderID }?.firstName ?? ""
+        return Text(message.senderID == me ? String(localized: "chat.theme.changed.you \(label)") : String(localized: "chat.theme.changed \(who) \(label)"))
+            .font(Theme.rounded(.caption, weight: .semibold))
+            .foregroundStyle(theme.secondaryText)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+    }
+
+    @ViewBuilder
+    private func messageRow(_ message: ChatMessage, previous: ChatMessage?) -> some View {
         let isMine = message.senderID == me
         let showsSender = !isMine && thread?.type != .direct && previous?.senderID != message.senderID
         let sender = thread?.participants.first { $0.id == message.senderID }
@@ -758,7 +842,7 @@ struct ChatRoomView: View {
             if gap {
                 Text(verbatim: message.sentAt.formatted(date: .abbreviated, time: .shortened))
                     .font(Theme.rounded(.caption2, weight: .semibold))
-                    .foregroundStyle(Theme.textSecondary)
+                    .foregroundStyle(theme.secondaryText)
                     .padding(.vertical, 8)
             }
             HStack(alignment: .bottom, spacing: 8) {
@@ -801,11 +885,45 @@ struct ChatRoomView: View {
                             withAnimation(Theme.spring) { reactingTo = message.id }
                         }
                     reactionChips(message, isMine: isMine)
+                    if isMine {
+                        receipt(message)
+                    }
                 }
                 if !isMine { Spacer(minLength: 48) }
             }
         }
         .zIndex(reactingTo == message.id ? 1 : 0)
+    }
+
+    /// ✓ / ✓✓ under your messages; "Seen" (or who saw it) under the last one.
+    @ViewBuilder
+    private func receipt(_ message: ChatMessage) -> some View {
+        let status = tickStatus(message)
+        let isLast = message.id == lastOwnMessageID
+        HStack(spacing: 4) {
+            if isLast {
+                let seen = seenBy(message)
+                Group {
+                    if status == .sending {
+                        Text("chat.sending")
+                    } else if thread?.type == .direct || others.count <= 1 {
+                        Text(seen.isEmpty ? LocalizedStringKey("chat.sent") : LocalizedStringKey("chat.seen"))
+                    } else if seen.isEmpty {
+                        Text("chat.sent")
+                    } else if seen.count == others.count {
+                        Text("chat.seenByAll")
+                    } else {
+                        Text("chat.seenBy \(seen.map(\.firstName).joined(separator: ", "))")
+                    }
+                }
+                .font(Theme.rounded(.caption2, weight: .semibold))
+                .foregroundStyle(theme.secondaryText)
+                .lineLimit(1)
+            }
+            MessageTicks(state: status, tint: theme.accent, secondary: theme.secondaryText)
+        }
+        .padding(.horizontal, 6)
+        .padding(.top, -2)
     }
 
     @ViewBuilder
@@ -862,6 +980,10 @@ struct ChatRoomView: View {
             }
         case let .locationPing(latitude, longitude, place, eta):
             locationBubble(latitude: latitude, longitude: longitude, place: place, eta: eta, isMine: isMine)
+        case let .voice(key, durationMs, levels):
+            VoiceBubble(message: message, key: key, durationMs: durationMs, levels: levels, isMine: isMine, theme: theme)
+        case .themeChange:
+            EmptyView()
         }
     }
 
@@ -873,7 +995,7 @@ struct ChatRoomView: View {
             .padding(.vertical, 9)
             .background {
                 if isMine {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous).fill(ChatStyle.sentGradient)
+                    RoundedRectangle(cornerRadius: 20, style: .continuous).fill(theme.bubbleGradient)
                 } else {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .fill(ChatStyle.receivedFill)
@@ -884,7 +1006,7 @@ struct ChatRoomView: View {
                         }
                 }
             }
-            .shadow(color: isMine ? Theme.electricViolet.opacity(0.25) : Color.black.opacity(0.15), radius: 8, y: 3)
+            .shadow(color: isMine ? theme.accent.opacity(0.25) : Color.black.opacity(0.15), radius: 8, y: 3)
     }
 
     @ViewBuilder
@@ -1005,6 +1127,21 @@ struct ChatRoomView: View {
                 }
                 .buttonStyle(PressableButtonStyle(pressedScale: 0.8))
             }
+            if message.senderID == me, !social.pendingMessageIDs.contains(message.id) {
+                Divider().frame(height: 26)
+                Button {
+                    HapticManager.shared.selection()
+                    withAnimation(Theme.spring) { reactingTo = nil }
+                    deleting = message
+                } label: {
+                    Image(systemName: "trash.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Theme.danger)
+                        .frame(width: 40, height: 40)
+                }
+                .buttonStyle(PressableButtonStyle(pressedScale: 0.8))
+                .accessibilityLabel(Text("chat.delete.everyone"))
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 2)
@@ -1014,7 +1151,58 @@ struct ChatRoomView: View {
 
     // MARK: Input
 
+    @ViewBuilder
     private var inputBar: some View {
+        if recorder.isRecording {
+            recordingBar
+        } else {
+            composeBar
+        }
+    }
+
+    private var recordingBar: some View {
+        HStack(spacing: 10) {
+            Button {
+                recorder.cancel()
+            } label: {
+                Image(systemName: "trash.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Theme.danger)
+                    .frame(width: 42, height: 42)
+                    .glassCircle()
+            }
+            .accessibilityLabel(Text("chat.voice.cancel"))
+            HStack(spacing: 8) {
+                Circle().fill(Theme.danger).frame(width: 9, height: 9)
+                    .opacity(Int(recorder.elapsed * 2) % 2 == 0 ? 1 : 0.35)
+                Text(verbatim: VoiceFormat.clock(recorder.elapsed))
+                    .font(Theme.rounded(.subheadline, weight: .bold))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.textPrimary)
+                WaveformBars(levels: Array(recorder.levels.suffix(36)), progress: 1, filled: theme.accent, empty: theme.accent)
+                    .frame(height: 24)
+            }
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, minHeight: 42)
+            .glassCard(cornerRadius: 21)
+            Button {
+                sendVoice()
+            } label: {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 16, weight: .heavy))
+                    .foregroundStyle(Color.white)
+                    .frame(width: 42, height: 42)
+                    .background(theme.bubbleGradient, in: Circle())
+            }
+            .accessibilityLabel(Text("chat.send"))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(.bar)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    private var composeBar: some View {
         HStack(alignment: .bottom, spacing: 8) {
             Button {
                 HapticManager.shared.tap()
@@ -1070,6 +1258,18 @@ struct ChatRoomView: View {
                     .padding(.bottom, 5)
                     .transition(.scale.combined(with: .opacity))
                     .accessibilityLabel(Text("chat.send"))
+                } else {
+                    Button {
+                        startVoice()
+                    } label: {
+                        Image(systemName: "mic.fill")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(theme.accent)
+                            .frame(width: 32, height: 32)
+                    }
+                    .padding(.bottom, 5)
+                    .transition(.scale.combined(with: .opacity))
+                    .accessibilityLabel(Text("chat.voice.record"))
                 }
             }
             .padding(.leading, 14)
@@ -1114,6 +1314,40 @@ struct ChatRoomView: View {
             appState.requestFocus(on: refID, openViewer: true)
         } else {
             appState.showToast(.info, title: String(localized: "chat.reply.pinExpired"))
+        }
+    }
+
+    private func startVoice() {
+        VoicePlayer.shared.stop()
+        isInputFocused = false
+        recorder.onLimit = { sendVoice() }
+        Task {
+            let ok = await recorder.start()
+            if !ok {
+                appState.showToast(.warning, title: String(localized: "chat.voice.micDenied"))
+            }
+        }
+    }
+
+    private func sendVoice() {
+        guard let result = recorder.finish() else { return }
+        HapticManager.shared.success()
+        var outgoing = OutgoingMessage(kind: .voice)
+        outgoing.voice = result.data
+        outgoing.durationMs = result.durationMs
+        outgoing.waveform = result.waveform
+        send(outgoing)
+    }
+
+    private func deleteForEveryone(_ message: ChatMessage) {
+        deleting = nil
+        if VoicePlayer.shared.currentID == message.id { VoicePlayer.shared.stop() }
+        Task {
+            do {
+                try await social.deleteForEveryone(message)
+            } catch {
+                appState.showToast(.warning, title: String(localized: "chat.delete.failed"), subtitle: error.localizedDescription)
+            }
         }
     }
 

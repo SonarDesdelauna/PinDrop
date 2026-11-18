@@ -49,6 +49,7 @@ final class PushNotifier: NSObject, UNUserNotificationCenterDelegate {
     private let dataService: SupabaseDataService
     private var isChecking = false
     private var pollTask: Task<Void, Never>?
+    private var pollInterval: Duration = .seconds(15)
 
     /// Called when a notification is tapped.
     var onOpen: ((PushRoute) -> Void)?
@@ -75,12 +76,16 @@ final class PushNotifier: NSObject, UNUserNotificationCenterDelegate {
         scheduleBackgroundRefresh()
     }
 
-    func startPolling() {
-        guard pollTask == nil else { return }
+    /// Polls for new events: every 15 s while the app is open, every 20 s while it is kept
+    /// running in the background.
+    func startPolling(every interval: Duration = .seconds(15)) {
+        if pollTask != nil, interval == pollInterval { return }
+        pollTask?.cancel()
+        pollInterval = interval
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.check()
-                try? await Task.sleep(for: .seconds(15))
+                try? await Task.sleep(for: interval)
             }
         }
     }
@@ -161,6 +166,8 @@ final class PushNotifier: NSObject, UNUserNotificationCenterDelegate {
             let content: String
             switch event.sub {
             case "photo": content = String(localized: "push.message.photo")
+            case "voice": content = String(localized: "push.message.voice")
+            case "theme": content = String(localized: "push.message.theme")
             case "location": content = String(localized: "push.message.location")
             case "pin_reply": content = detail.isEmpty ? String(localized: "push.message.pinReply") : String(localized: "push.message.pinReply.text \(detail)")
             case "story_reply": content = detail.isEmpty ? String(localized: "push.message.storyReply") : String(localized: "push.message.storyReply.text \(detail)")
@@ -210,46 +217,61 @@ final class PushNotifier: NSObject, UNUserNotificationCenterDelegate {
 
     // MARK: UNUserNotificationCenterDelegate
 
+    // The completion-handler versions: iOS calls them on the main thread and expects the handler
+    // there. The async versions crashed the app on launch from a tapped notification (the
+    // compiler-generated bridge called the handler off the main thread).
+
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification
-    ) async -> UNNotificationPresentationOptions {
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
         let present = (notification.request.content.userInfo["present"] as? String) != "0"
-        return present ? [.banner, .list, .sound] : [.list]
+        completionHandler(present ? [.banner, .list, .sound] : [.list])
     }
 
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse
-    ) async {
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
         let info = response.notification.request.content.userInfo
-        let kind = info["kind"] as? String ?? ""
-        let thread = (info["thread"] as? String).flatMap(UUID.init(uuidString:))
-        let ref = (info["ref"] as? String).flatMap(UUID.init(uuidString:))
-        let actor = (info["actor"] as? String).flatMap(UUID.init(uuidString:))
-        let route: PushRoute
+        let route = Self.route(
+            kind: info["kind"] as? String ?? "",
+            thread: info["thread"] as? String,
+            ref: info["ref"] as? String,
+            actor: info["actor"] as? String
+        )
+        if let route {
+            Task { @MainActor [weak self] in
+                // Let the first frame of the app appear before opening sheets.
+                try? await Task.sleep(for: .milliseconds(400))
+                guard let self else { return }
+                if let onOpen = self.onOpen {
+                    onOpen(route)
+                } else {
+                    self.pendingRoute = route
+                }
+            }
+        }
+        completionHandler()
+    }
+
+    nonisolated private static func route(kind: String, thread: String?, ref: String?, actor: String?) -> PushRoute? {
+        let thread = thread.flatMap(UUID.init(uuidString:))
+        let ref = ref.flatMap(UUID.init(uuidString:))
+        let actor = actor.flatMap(UUID.init(uuidString:))
         switch kind {
         case "message":
-            guard let thread else { return }
-            route = .chat(thread)
+            return thread.map { .chat($0) }
         case "story":
-            guard let actor else { return }
-            route = .story(actor)
+            return actor.map { .story($0) }
         case "pin":
-            guard let ref else { return }
-            route = .pin(ref)
+            return ref.map { .pin($0) }
         case _ where kind.hasPrefix("relay_"):
-            guard let ref else { return }
-            route = .relay(ref)
+            return ref.map { .relay($0) }
         default:
-            route = .notifications
-        }
-        await MainActor.run {
-            if let onOpen {
-                onOpen(route)
-            } else {
-                pendingRoute = route
-            }
+            return .notifications
         }
     }
 }

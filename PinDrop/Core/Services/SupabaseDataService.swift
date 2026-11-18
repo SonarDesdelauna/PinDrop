@@ -1083,6 +1083,8 @@ final class SupabaseDataService: Sendable {
             let latitude: Double?
             let longitude: Double?
             let eta_minutes: Int?
+            let duration_ms: Int?
+            let waveform: String?
         }
         let messageID = UUID()
         var bucket = outgoing.attachmentBucket
@@ -1097,6 +1099,16 @@ final class SupabaseDataService: Sendable {
             bucket = "chat"
             path = photoPath
         }
+        if let voice = outgoing.voice {
+            let voicePath = "\(Self.storageID(threadID))/\(Self.storageID(messageID)).m4a"
+            _ = try await client.storage.from("chat").upload(
+                voicePath,
+                data: voice,
+                options: FileOptions(cacheControl: "604800", contentType: "audio/mp4", upsert: false)
+            )
+            bucket = "chat"
+            path = voicePath
+        }
         let row = NewMessage(
             id: messageID,
             thread_id: threadID,
@@ -1108,7 +1120,9 @@ final class SupabaseDataService: Sendable {
             place_name: outgoing.placeName.map { String($0.prefix(120)) },
             latitude: outgoing.latitude,
             longitude: outgoing.longitude,
-            eta_minutes: outgoing.etaMinutes
+            eta_minutes: outgoing.etaMinutes,
+            duration_ms: outgoing.durationMs,
+            waveform: outgoing.waveform
         )
         return try await client
             .from("chat_messages")
@@ -1117,6 +1131,47 @@ final class SupabaseDataService: Sendable {
             .single()
             .execute()
             .value
+    }
+
+    /// Deletes one of your messages for everyone (and its photo or voice file).
+    func deleteMessage(_ message: ChatMessage) async throws {
+        try await client
+            .from("chat_messages")
+            .delete()
+            .eq("id", value: message.id)
+            .execute()
+        if message.attachmentBucket == "chat", let path = message.attachmentPath {
+            _ = try? await client.storage.from("chat").remove(paths: [path])
+        }
+    }
+
+    func setChatTheme(_ theme: String, threadID: UUID) async throws {
+        struct Params: Encodable, Sendable {
+            let thread: UUID
+            let theme: String
+        }
+        try await client
+            .rpc("set_chat_theme", params: Params(thread: threadID, theme: theme))
+            .execute()
+    }
+
+    /// When each member last read the chat (for the seen receipts).
+    func fetchReadStates(threadID: UUID) async throws -> [UUID: Date] {
+        struct Row: Decodable, Sendable {
+            let user_id: UUID
+            let last_read_at: Date?
+        }
+        let rows: [Row] = try await client
+            .from("chat_members")
+            .select("user_id, last_read_at")
+            .eq("thread_id", value: threadID)
+            .execute()
+            .value
+        var out: [UUID: Date] = [:]
+        for row in rows {
+            if let date = row.last_read_at { out[row.user_id] = date }
+        }
+        return out
     }
 
     func setChatReaction(_ emoji: String, on messageID: UUID, add: Bool) async throws {
